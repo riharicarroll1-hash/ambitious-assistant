@@ -1,4 +1,35 @@
+"use client";
+
+import { useState } from "react";
 export default function Home() {
+  const [message, setMessage] = useState("");
+  const [reply, setReply] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function askAssistant() {
+    if (!message.trim()) return;
+
+    setLoading(true);
+    setReply("");
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ message }),
+      });
+
+      const data = await response.json();
+      setReply(data.reply || data.error || "No response.");
+    } catch {
+      setReply("Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#0b0b0d] text-white">
       <div className="mx-auto min-h-screen max-w-md px-5 pb-28 pt-10">
