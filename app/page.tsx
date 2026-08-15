@@ -1,45 +1,166 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createBrowserClient } from "@supabase/ssr";
 
-const priorities = [
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+);
+
+const defaultPriorities = [
   "Trading session",
   "Gym",
   "Record content",
   "15,000 steps",
 ];
 
+type Task = {
+  id: string;
+  title: string;
+  status: string;
+  due_date: string | null;
+};
+
 export default function Home() {
   const [message, setMessage] = useState("");
   const [reply, setReply] = useState("");
   const [loading, setLoading] = useState(false);
-  const [completed, setCompleted] = useState<string[]>([]);
+
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
+  const [taskError, setTaskError] = useState("");
 
   useEffect(() => {
-    const saved = localStorage.getItem("ambitious-priorities");
-
-    if (saved) {
-      try {
-        setCompleted(JSON.parse(saved));
-      } catch {
-        setCompleted([]);
-      }
-    }
+    loadTodaysPriorities();
   }, []);
 
-  function togglePriority(title: string) {
-    setCompleted((current) => {
-      const updated = current.includes(title)
-        ? current.filter((item) => item !== title)
-        : [...current, title];
+  async function loadTodaysPriorities() {
+    setTasksLoading(true);
+    setTaskError("");
 
-      localStorage.setItem(
-        "ambitious-priorities",
-        JSON.stringify(updated)
+    try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setTaskError("Could not load your account.");
+        return;
+      }
+
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(startOfDay);
+      endOfDay.setDate(endOfDay.getDate() + 1);
+
+      const { data: existingTasks, error: fetchError } =
+        await supabase
+          .from("tasks")
+          .select("id, title, status, due_date")
+          .eq("user_id", user.id)
+          .gte("due_date", startOfDay.toISOString())
+          .lt("due_date", endOfDay.toISOString())
+          .in("title", defaultPriorities);
+
+      if (fetchError) {
+        console.error(fetchError);
+        setTaskError("Could not load today's priorities.");
+        return;
+      }
+
+      const existingTitles = new Set(
+        (existingTasks || []).map((task) => task.title)
       );
 
-      return updated;
-    });
+      const missingTitles = defaultPriorities.filter(
+        (title) => !existingTitles.has(title)
+      );
+
+      let createdTasks: Task[] = [];
+
+      if (missingTitles.length > 0) {
+        const newTasks = missingTitles.map((title, index) => ({
+          user_id: user.id,
+          title,
+          status: "pending",
+          priority: "normal",
+          due_date: new Date().toISOString(),
+          can_be_scheduled: true,
+          estimated_minutes: 30,
+          description: null,
+        }));
+
+        const { data, error: insertError } = await supabase
+          .from("tasks")
+          .insert(newTasks)
+          .select("id, title, status, due_date");
+
+        if (insertError) {
+          console.error(insertError);
+          setTaskError("Could not create today's priorities.");
+          return;
+        }
+
+        createdTasks = data || [];
+      }
+
+      const allTasks = [
+        ...(existingTasks || []),
+        ...createdTasks,
+      ];
+
+      const orderedTasks = defaultPriorities
+        .map((title) =>
+          allTasks.find((task) => task.title === title)
+        )
+        .filter(Boolean) as Task[];
+
+      setTasks(orderedTasks);
+    } catch (error) {
+      console.error(error);
+      setTaskError("Something went wrong loading priorities.");
+    } finally {
+      setTasksLoading(false);
+    }
+  }
+
+  async function togglePriority(task: Task) {
+    const newStatus =
+      task.status === "completed" ? "pending" : "completed";
+
+    // Update UI immediately
+    setTasks((current) =>
+      current.map((item) =>
+        item.id === task.id
+          ? { ...item, status: newStatus }
+          : item
+      )
+    );
+
+    const { error } = await supabase
+      .from("tasks")
+      .update({
+        status: newStatus,
+      })
+      .eq("id", task.id);
+
+    if (error) {
+      console.error(error);
+
+      // Put it back if Supabase update fails
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === task.id
+            ? { ...item, status: task.status }
+            : item
+        )
+      );
+
+      setTaskError("Could not update that priority.");
+    }
   }
 
   async function askAssistant() {
@@ -124,27 +245,54 @@ export default function Home() {
         </section>
 
         <section className="mb-10">
-          <h2 className="mb-4 text-sm font-medium text-zinc-400">
-            TODAY&apos;S PRIORITIES
-          </h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-sm font-medium text-zinc-400">
+              TODAY&apos;S PRIORITIES
+            </h2>
 
-          <div className="space-y-3">
-            {priorities.map((title) => (
-              <Priority
-                key={title}
-                title={title}
-                completed={completed.includes(title)}
-                onToggle={() => togglePriority(title)}
-              />
-            ))}
+            {tasks.length > 0 && (
+              <span className="text-xs text-zinc-600">
+                {
+                  tasks.filter(
+                    (task) => task.status === "completed"
+                  ).length
+                }
+                /{tasks.length} done
+              </span>
+            )}
           </div>
+
+          {tasksLoading && (
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
+              Loading priorities...
+            </div>
+          )}
+
+          {taskError && (
+            <div className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-400">
+              {taskError}
+            </div>
+          )}
+
+          {!tasksLoading && (
+            <div className="space-y-3">
+              {tasks.map((task) => (
+                <Priority
+                  key={task.id}
+                  title={task.title}
+                  completed={task.status === "completed"}
+                  onToggle={() => togglePriority(task)}
+                />
+              ))}
+            </div>
+          )}
         </section>
       </div>
 
       <div className="fixed bottom-6 left-1/2 w-[calc(100%-40px)] max-w-md -translate-x-1/2">
 
         {reply && (
-          <div className="relative mb-3 rounded-3xl border border-zinc-800 bg-[#111113] p-5 pr-12 shadow-xl">
+          <div className="relative mb-3 max-h-[55vh] overflow-y-auto rounded-3xl border border-zinc-800 bg-[#111113] p-5 pr-12 shadow-xl">
             <button
               onClick={() => setReply("")}
               aria-label="Dismiss response"
