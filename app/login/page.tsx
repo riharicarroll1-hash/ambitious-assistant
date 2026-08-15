@@ -53,7 +53,7 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#0b0b0d] px-6 text-white">
       <div className="w-full max-w-sm">
-        <p className="mb-3 text-sm text-violet-400">AMBITION</p>
+        <p className="mb-3 text-sm text-violet-400">AMBITIOUS</p>
 
         <h1 className="text-3xl font-semibold">
           Welcome back.
