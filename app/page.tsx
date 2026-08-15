@@ -84,12 +84,33 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="fixed bottom-6 left-1/2 w-[calc(100%-40px)] max-w-md -translate-x-1/2">
-          <button className="flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-5 py-4 font-medium text-black shadow-2xl">
-            <span className="text-xl">🎙️</span>
-            Talk to your assistant
-          </button>
-        </div>
+        <div className="fixed bottom-6 left-1/2 w-[calc(100%-3rem)] max-w-md -translate-x-1/2">
+  {reply && (
+    <div className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-sm text-zinc-200">
+      {reply}
+    </div>
+  )}
+
+  <div className="flex items-center gap-2 rounded-2xl border border-zinc-700 bg-white p-2">
+    <input
+      value={message}
+      onChange={(e) => setMessage(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") askAssistant();
+      }}
+      placeholder="Ask Ambition anything..."
+      className="min-w-0 flex-1 bg-transparent px-3 py-2 text-black outline-none"
+    />
+
+    <button
+      onClick={askAssistant}
+      disabled={loading}
+      className="rounded-xl bg-black px-4 py-2 font-medium text-white disabled:opacity-50"
+    >
+      {loading ? "..." : "Ask"}
+    </button>
+  </div>
+</div>
       </div>
     </main>
   );
