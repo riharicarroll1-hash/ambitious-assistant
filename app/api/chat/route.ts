@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -16,9 +17,50 @@ export async function POST(request: Request) {
       );
     }
 
+    // Connect to Supabase
+    const supabase = await createClient();
+
+    // Identify the signed-in user
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    // Load this user's active memories
+    const { data: memories, error: memoryError } = await supabase
+      .from("memories")
+      .select("content, memory_type, importance")
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .order("importance", { ascending: false })
+      .limit(25);
+
+    if (memoryError) {
+      console.error("Memory fetch error:", memoryError);
+    }
+
+    // Turn memories into context Ambitious can understand
+    const memoryContext =
+      memories && memories.length > 0
+        ? memories
+            .map(
+              (memory) =>
+                `- [${memory.memory_type}] ${memory.content}`
+            )
+            .join("\n")
+        : "No saved memories yet.";
+
+    // Ask OpenAI
     const response = await openai.responses.create({
       model: "gpt-5.4",
-      instructions: `You are Ambition, Hari's personal executive assistant and personal operating system.
+
+      instructions: `You are Ambitious, Hari's personal executive assistant and personal operating system.
 
 Your job is to help Hari organise, prioritise, schedule and execute his life.
 
@@ -27,7 +69,7 @@ Think like a highly capable executive assistant:
 - Treat flexible commitments as movable.
 - Prefer clear action over long explanations.
 - Help reduce overload and unnecessary decisions.
-- When something can be scheduled, think in terms of the best time to place it.
+- When something can be scheduled, think about the best time to place it.
 - When priorities conflict, surface the conflict clearly.
 - When information is missing, ask only for what is necessary.
 - Keep responses concise, practical and useful.
@@ -45,11 +87,16 @@ Hari may ask about:
 - tasks
 - scheduling
 
-Eventually, your source of truth will be Hari's Supabase data and Google Calendar.
+Here are Hari's currently saved memories:
 
-Never pretend you have changed a calendar, task, routine or memory unless a connected tool has actually done it.
+${memoryContext}
 
-For now, if Hari asks you to schedule or change something, explain what you would do and what information you still need.`,
+Use these memories when they are relevant to Hari's request.
+Do not mention the memory database unless Hari specifically asks about it.
+Do not invent memories that are not provided above.
+
+Never pretend you have changed a calendar, task, routine or memory unless the application has actually performed that action.`,
+
       input: message,
     });
 
@@ -57,7 +104,7 @@ For now, if Hari asks you to schedule or change something, explain what you woul
       reply: response.output_text,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Chat API error:", error);
 
     return NextResponse.json(
       { error: "Something went wrong." },
