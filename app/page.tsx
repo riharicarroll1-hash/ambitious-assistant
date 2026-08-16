@@ -68,17 +68,13 @@ function toLocalIso(date: Date) {
   const absolute =
     Math.abs(offsetMinutes);
 
-  const offsetHour =
-    pad(
-      Math.floor(
-        absolute / 60
-      )
-    );
+  const offsetHour = pad(
+    Math.floor(absolute / 60)
+  );
 
-  const offsetMinute =
-    pad(
-      absolute % 60
-    );
+  const offsetMinute = pad(
+    absolute % 60
+  );
 
   return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${offsetHour}:${offsetMinute}`;
 }
@@ -685,30 +681,17 @@ export default function Home() {
       <div className="mx-auto min-h-screen max-w-md px-5 pb-40 pt-16">
 
         <header className="mb-8">
-          <div className="flex items-start justify-between gap-5">
-            <div>
-              <p className="mb-2 text-sm text-violet-400">
-                AMBITIOUS
-              </p>
+          <p className="mb-2 text-sm text-violet-400">
+            AMBITIOUS
+          </p>
 
-              <h1 className="text-3xl font-semibold tracking-tight">
-                Good morning,
-                Hari.
-              </h1>
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Good morning, Hari.
+          </h1>
 
-              <p className="mt-2 text-zinc-400">
-                Here&apos;s what your
-                day looks like.
-              </p>
-            </div>
-
-            <Link
-              href="/goals"
-              className="mt-1 shrink-0 rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-violet-400"
-            >
-              Goals
-            </Link>
-          </div>
+          <p className="mt-2 text-zinc-400">
+            Here&apos;s what your day looks like.
+          </p>
         </header>
 
         <Link
@@ -721,9 +704,7 @@ export default function Home() {
             </p>
 
             <p className="mt-1 text-sm text-zinc-500">
-              Manage what
-              Ambitious is helping
-              you achieve
+              Manage what Ambitious is helping you achieve
             </p>
           </div>
 
@@ -741,8 +722,7 @@ export default function Home() {
                 </p>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  Your schedule
-                  is live
+                  Your schedule is live
                 </p>
               </div>
 
@@ -767,8 +747,7 @@ export default function Home() {
                 </p>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  Connect your real
-                  schedule
+                  Connect your real schedule
                 </p>
               </div>
 
@@ -804,8 +783,7 @@ export default function Home() {
 
           {calendarLoading && (
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
-              Loading your
-              calendar...
+              Loading your calendar...
             </div>
           )}
 
@@ -833,8 +811,7 @@ export default function Home() {
             calendarEvents.length ===
               0 && (
               <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
-                Nothing scheduled
-                today.
+                Nothing scheduled today.
               </div>
             )}
 
@@ -886,8 +863,7 @@ export default function Home() {
           {briefingLoading &&
             calendarConnected && (
               <p className="leading-7 text-zinc-500">
-                Analysing your
-                day...
+                Analysing your day...
               </p>
             )}
 
@@ -910,13 +886,11 @@ export default function Home() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-sm font-medium text-zinc-400">
-                TODAY&apos;S
-                PRIORITIES
+                TODAY&apos;S PRIORITIES
               </h2>
 
               <p className="mt-1 text-xs text-zinc-700">
-                Generated from
-                your active goals
+                Generated from your active goals
               </p>
             </div>
 
@@ -938,8 +912,7 @@ export default function Home() {
 
           {prioritiesLoading ? (
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
-              Building today&apos;s
-              priorities...
+              Building today&apos;s priorities...
             </div>
           ) : priorityError ? (
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-400">
@@ -949,9 +922,7 @@ export default function Home() {
             0 ? (
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
               <p className="text-zinc-300">
-                Nothing required
-                from your goals
-                today.
+                Nothing required from your goals today.
               </p>
 
               <Link
