@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createBrowserClient } from "@supabase/ssr";
 
@@ -10,6 +10,14 @@ const supabase = createBrowserClient(
 );
 
 type Frequency = "daily" | "weekly";
+
+type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string | null;
+  end: string | null;
+  allDay: boolean;
+};
 
 type GoalAction = {
   id?: string;
@@ -47,68 +55,281 @@ function actionLabel(action: GoalAction) {
   return `${action.target_value} ${action.unit || ""} / week`;
 }
 
+function toLocalIso(date: Date) {
+  const pad = (value: number) =>
+    String(value).padStart(2, "0");
+
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+
+  const hour = pad(date.getHours());
+  const minute = pad(date.getMinutes());
+  const second = pad(date.getSeconds());
+
+  const offsetMinutes =
+    -date.getTimezoneOffset();
+
+  const sign =
+    offsetMinutes >= 0 ? "+" : "-";
+
+  const absolute =
+    Math.abs(offsetMinutes);
+
+  const offsetHour = pad(
+    Math.floor(absolute / 60)
+  );
+
+  const offsetMinute = pad(
+    absolute % 60
+  );
+
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${offsetHour}:${offsetMinute}`;
+}
+
 export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [archivedGoals, setArchivedGoals] = useState<Goal[]>([]);
+  const [archivedGoals, setArchivedGoals] =
+    useState<Goal[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // GOOGLE CALENDAR OPTIONS
+  const [calendarEvents, setCalendarEvents] =
+    useState<CalendarEvent[]>([]);
+
+  const [calendarLoading, setCalendarLoading] =
+    useState(true);
+
+  const [calendarConnected, setCalendarConnected] =
+    useState(false);
+
+  const timeZone = useMemo(() => {
+    try {
+      return (
+        Intl.DateTimeFormat()
+          .resolvedOptions()
+          .timeZone || "UTC"
+      );
+    } catch {
+      return "UTC";
+    }
+  }, []);
+
+  const calendarOptions = useMemo(() => {
+    const titles = calendarEvents
+      .map((event) => event.title?.trim())
+      .filter(
+        (title): title is string =>
+          Boolean(title)
+      );
+
+    return Array.from(
+      new Set(titles)
+    ).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [calendarEvents]);
+
   // NEW GOAL
   const [creating, setCreating] = useState(false);
-  const [goalTitle, setGoalTitle] = useState("");
-  const [goalWhy, setGoalWhy] = useState("");
-  const [goalDate, setGoalDate] = useState("");
-  const [suggestedActions, setSuggestedActions] =
-    useState<GoalAction[]>([]);
-  const [building, setBuilding] = useState(false);
-  const [editingSuggestedAction, setEditingSuggestedAction] =
-    useState<number | null>(null);
 
-  // EXISTING GOAL EDITING
+  const [goalTitle, setGoalTitle] =
+    useState("");
+
+  const [goalWhy, setGoalWhy] =
+    useState("");
+
+  const [goalDate, setGoalDate] =
+    useState("");
+
+  const [
+    suggestedActions,
+    setSuggestedActions,
+  ] = useState<GoalAction[]>([]);
+
+  const [building, setBuilding] =
+    useState(false);
+
+  const [
+    editingSuggestedAction,
+    setEditingSuggestedAction,
+  ] = useState<number | null>(null);
+
+  // EDIT BIG GOAL
   const [editingGoalId, setEditingGoalId] =
     useState<string | null>(null);
 
-  const [editGoalTitle, setEditGoalTitle] = useState("");
-  const [editGoalWhy, setEditGoalWhy] = useState("");
-  const [editGoalDate, setEditGoalDate] = useState("");
-
-  const [editingExistingActionId, setEditingExistingActionId] =
-    useState<string | null>(null);
-
-  const [editActionTitle, setEditActionTitle] = useState("");
-  const [editActionFrequency, setEditActionFrequency] =
-    useState<Frequency>("daily");
-  const [editActionValue, setEditActionValue] = useState("1");
-  const [editActionUnit, setEditActionUnit] =
-    useState("completion");
-  const [editActionCalendarMatch, setEditActionCalendarMatch] =
+  const [editGoalTitle, setEditGoalTitle] =
     useState("");
+
+  const [editGoalWhy, setEditGoalWhy] =
+    useState("");
+
+  const [editGoalDate, setEditGoalDate] =
+    useState("");
+
+  // EDIT EXISTING ACTION
+  const [
+    editingExistingActionId,
+    setEditingExistingActionId,
+  ] = useState<string | null>(null);
+
+  const [
+    editActionTitle,
+    setEditActionTitle,
+  ] = useState("");
+
+  const [
+    editActionFrequency,
+    setEditActionFrequency,
+  ] = useState<Frequency>("daily");
+
+  const [
+    editActionValue,
+    setEditActionValue,
+  ] = useState("1");
+
+  const [
+    editActionUnit,
+    setEditActionUnit,
+  ] = useState("completion");
+
+  const [
+    editActionCalendarMatch,
+    setEditActionCalendarMatch,
+  ] = useState("");
 
   // ADD ACTION
-  const [manualGoalId, setManualGoalId] =
-    useState<string | null>(null);
+  const [
+    manualGoalId,
+    setManualGoalId,
+  ] = useState<string | null>(null);
 
-  const [manualTitle, setManualTitle] = useState("");
-  const [manualFrequency, setManualFrequency] =
-    useState<Frequency>("daily");
-  const [manualValue, setManualValue] = useState("1");
-  const [manualUnit, setManualUnit] =
-    useState("completion");
-  const [manualCalendarMatch, setManualCalendarMatch] =
-    useState("");
+  const [
+    manualTitle,
+    setManualTitle,
+  ] = useState("");
+
+  const [
+    manualFrequency,
+    setManualFrequency,
+  ] = useState<Frequency>("daily");
+
+  const [
+    manualValue,
+    setManualValue,
+  ] = useState("1");
+
+  const [
+    manualUnit,
+    setManualUnit,
+  ] = useState("completion");
+
+  const [
+    manualCalendarMatch,
+    setManualCalendarMatch,
+  ] = useState("");
 
   // MENUS / ARCHIVE
   const [goalMenu, setGoalMenu] =
     useState<string | null>(null);
 
-  const [showArchived, setShowArchived] =
-    useState(false);
+  const [
+    showArchived,
+    setShowArchived,
+  ] = useState(false);
 
   useEffect(() => {
     loadGoals();
+    loadCalendarOptions();
   }, []);
+
+  async function loadCalendarOptions() {
+    setCalendarLoading(true);
+
+    try {
+      const start = new Date();
+
+      start.setHours(
+        0,
+        0,
+        0,
+        0
+      );
+
+      const end = new Date(start);
+
+      end.setDate(
+        end.getDate() + 7
+      );
+
+      const params =
+        new URLSearchParams({
+          days: "7",
+          timeZone,
+          timeMin:
+            toLocalIso(start),
+          timeMax:
+            toLocalIso(end),
+        });
+
+      const response =
+        await fetch(
+          `/api/calendar?${params.toString()}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.connected
+      ) {
+        setCalendarConnected(
+          false
+        );
+
+        setCalendarEvents(
+          []
+        );
+
+        return;
+      }
+
+      setCalendarConnected(
+        true
+      );
+
+      setCalendarEvents(
+        Array.isArray(
+          data.events
+        )
+          ? data.events
+          : []
+      );
+    } catch (err) {
+      console.error(
+        "Calendar options error:",
+        err
+      );
+
+      setCalendarConnected(
+        false
+      );
+
+      setCalendarEvents([]);
+    } finally {
+      setCalendarLoading(
+        false
+      );
+    }
+  }
 
   async function loadGoals() {
     setLoading(true);
@@ -117,14 +338,21 @@ export default function GoalsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
-        setError("Could not load your account.");
+        setError(
+          "Could not load your account."
+        );
+
         return;
       }
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("goals")
         .select(`
           id,
@@ -143,22 +371,40 @@ export default function GoalsPage() {
             active
           )
         `)
-        .eq("user_id", user.id)
-        .neq("status", "archived")
-        .order("created_at", {
-          ascending: false,
-        });
+        .eq(
+          "user_id",
+          user.id
+        )
+        .neq(
+          "status",
+          "archived"
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false,
+          }
+        );
 
       if (error) {
         console.error(error);
-        setError("Could not load your goals.");
+
+        setError(
+          "Could not load your goals."
+        );
+
         return;
       }
 
-      setGoals(data || []);
+      setGoals(
+        data || []
+      );
     } catch (err) {
       console.error(err);
-      setError("Could not load your goals.");
+
+      setError(
+        "Could not load your goals."
+      );
     } finally {
       setLoading(false);
     }
@@ -170,14 +416,21 @@ export default function GoalsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
-        setError("Could not load your account.");
+        setError(
+          "Could not load your account."
+        );
+
         return;
       }
 
-      const { data, error } = await supabase
+      const {
+        data,
+        error,
+      } = await supabase
         .from("goals")
         .select(`
           id,
@@ -196,22 +449,40 @@ export default function GoalsPage() {
             active
           )
         `)
-        .eq("user_id", user.id)
-        .eq("status", "archived")
-        .order("updated_at", {
-          ascending: false,
-        });
+        .eq(
+          "user_id",
+          user.id
+        )
+        .eq(
+          "status",
+          "archived"
+        )
+        .order(
+          "updated_at",
+          {
+            ascending: false,
+          }
+        );
 
       if (error) {
         console.error(error);
-        setError("Could not load archived goals.");
+
+        setError(
+          "Could not load archived goals."
+        );
+
         return;
       }
 
-      setArchivedGoals(data || []);
+      setArchivedGoals(
+        data || []
+      );
     } catch (err) {
       console.error(err);
-      setError("Could not load archived goals.");
+
+      setError(
+        "Could not load archived goals."
+      );
     }
   }
 
@@ -225,62 +496,98 @@ export default function GoalsPage() {
     setGoalWhy("");
     setGoalDate("");
     setSuggestedActions([]);
-    setEditingSuggestedAction(null);
+    setEditingSuggestedAction(
+      null
+    );
   }
 
   async function buildWithAI() {
-    if (!goalTitle.trim()) return;
+    if (!goalTitle.trim()) {
+      return;
+    }
 
     setBuilding(true);
     setError("");
 
     try {
-      const response = await fetch("/api/goals/build", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          goal: goalTitle,
-          why: goalWhy,
-          deadline: goalDate,
-        }),
-      });
+      const response =
+        await fetch(
+          "/api/goals/build",
+          {
+            method: "POST",
 
-      const data = await response.json();
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                goal:
+                  goalTitle,
+                why:
+                  goalWhy,
+                deadline:
+                  goalDate,
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
 
       if (!response.ok) {
         setError(
           data.error ||
             "Could not build your goal."
         );
+
         return;
       }
 
       setSuggestedActions(
-        (data.actions || []).map(
-          (action: GoalAction) => ({
-            title: action.title,
-            frequency: action.frequency,
+        (
+          data.actions || []
+        ).map(
+          (
+            action: GoalAction
+          ) => ({
+            title:
+              action.title,
+
+            frequency:
+              action.frequency,
+
             target_value:
-              Number(action.target_value) || 1,
+              Number(
+                action.target_value
+              ) || 1,
+
             unit:
-              action.unit || "completion",
+              action.unit ||
+              "completion",
+
             calendar_match:
-              action.calendar_match || "",
+              action.calendar_match ||
+              "",
           })
         )
       );
     } catch (err) {
       console.error(err);
-      setError("Could not build your goal.");
+
+      setError(
+        "Could not build your goal."
+      );
     } finally {
       setBuilding(false);
     }
   }
 
   async function saveGoal() {
-    if (!goalTitle.trim()) return;
+    if (!goalTitle.trim()) {
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -288,10 +595,14 @@ export default function GoalsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
-        setError("Could not load your account.");
+        setError(
+          "Could not load your account."
+        );
+
         return;
       }
 
@@ -301,20 +612,38 @@ export default function GoalsPage() {
       } = await supabase
         .from("goals")
         .insert({
-          user_id: user.id,
-          title: goalTitle.trim(),
+          user_id:
+            user.id,
+
+          title:
+            goalTitle.trim(),
+
           description:
-            goalWhy.trim() || null,
+            goalWhy.trim() ||
+            null,
+
           target_date:
-            goalDate || null,
-          status: "active",
+            goalDate ||
+            null,
+
+          status:
+            "active",
         })
         .select("id")
         .single();
 
-      if (goalError || !goal) {
-        console.error(goalError);
-        setError("Could not save your goal.");
+      if (
+        goalError ||
+        !goal
+      ) {
+        console.error(
+          goalError
+        );
+
+        setError(
+          "Could not save your goal."
+        );
+
         return;
       }
 
@@ -324,37 +653,56 @@ export default function GoalsPage() {
             action.title.trim()
         );
 
-      if (validActions.length > 0) {
+      if (
+        validActions.length >
+        0
+      ) {
         const rows =
           validActions.map(
             (action) => ({
-              goal_id: goal.id,
-              user_id: user.id,
-              title: action.title.trim(),
+              goal_id:
+                goal.id,
+
+              user_id:
+                user.id,
+
+              title:
+                action.title.trim(),
+
               frequency:
                 action.frequency,
+
               target_value:
                 Number(
                   action.target_value
                 ) || 1,
+
               unit:
                 action.unit?.trim() ||
                 "completion",
+
               calendar_match:
                 action.calendar_match?.trim() ||
                 null,
+
               active: true,
             })
           );
 
         const {
-          error: actionsError,
+          error:
+            actionsError,
         } = await supabase
-          .from("goal_targets")
+          .from(
+            "goal_targets"
+          )
           .insert(rows);
 
         if (actionsError) {
-          console.error(actionsError);
+          console.error(
+            actionsError
+          );
+
           setError(
             "Goal saved, but some actions could not be added."
           );
@@ -362,6 +710,7 @@ export default function GoalsPage() {
       }
 
       resetNewGoal();
+
       await loadGoals();
     } finally {
       setSaving(false);
@@ -370,23 +719,32 @@ export default function GoalsPage() {
 
   function updateSuggestedAction(
     index: number,
-    changes: Partial<GoalAction>
+    changes:
+      Partial<GoalAction>
   ) {
-    setSuggestedActions((current) =>
-      current.map((action, i) =>
-        i === index
-          ? {
-              ...action,
-              ...changes,
-            }
-          : action
-      )
+    setSuggestedActions(
+      (current) =>
+        current.map(
+          (action, i) =>
+            i === index
+              ? {
+                  ...action,
+                  ...changes,
+                }
+              : action
+        )
     );
   }
 
-  function removeSuggestedAction(index: number) {
-    setSuggestedActions((current) =>
-      current.filter((_, i) => i !== index)
+  function removeSuggestedAction(
+    index: number
+  ) {
+    setSuggestedActions(
+      (current) =>
+        current.filter(
+          (_, i) =>
+            i !== index
+        )
     );
   }
 
@@ -394,37 +752,60 @@ export default function GoalsPage() {
     const newIndex =
       suggestedActions.length;
 
-    setSuggestedActions((current) => [
-      ...current,
-      {
-        title: "",
-        frequency: "daily",
-        target_value: 1,
-        unit: "completion",
-        calendar_match: "",
-      },
-    ]);
+    setSuggestedActions(
+      (current) => [
+        ...current,
+        {
+          title: "",
+          frequency:
+            "daily",
+          target_value: 1,
+          unit:
+            "completion",
+          calendar_match: "",
+        },
+      ]
+    );
 
-    setEditingSuggestedAction(newIndex);
+    setEditingSuggestedAction(
+      newIndex
+    );
   }
 
   // ------------------------------
   // EDIT BIG GOAL
   // ------------------------------
 
-  function startEditingGoal(goal: Goal) {
+  function startEditingGoal(
+    goal: Goal
+  ) {
     setGoalMenu(null);
-    setEditingGoalId(goal.id);
-    setEditGoalTitle(goal.title);
-    setEditGoalWhy(
-      goal.description || ""
-    );
-    setEditGoalDate(
-      goal.target_date || ""
+
+    setEditingGoalId(
+      goal.id
     );
 
-    setManualGoalId(null);
-    setEditingExistingActionId(null);
+    setEditGoalTitle(
+      goal.title
+    );
+
+    setEditGoalWhy(
+      goal.description ||
+        ""
+    );
+
+    setEditGoalDate(
+      goal.target_date ||
+        ""
+    );
+
+    setManualGoalId(
+      null
+    );
+
+    setEditingExistingActionId(
+      null
+    );
   }
 
   function cancelEditingGoal() {
@@ -432,11 +813,20 @@ export default function GoalsPage() {
     setEditGoalTitle("");
     setEditGoalWhy("");
     setEditGoalDate("");
-    setEditingExistingActionId(null);
+
+    setEditingExistingActionId(
+      null
+    );
   }
 
-  async function saveEditedGoal(goalId: string) {
-    if (!editGoalTitle.trim()) return;
+  async function saveEditedGoal(
+    goalId: string
+  ) {
+    if (
+      !editGoalTitle.trim()
+    ) {
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -448,25 +838,35 @@ export default function GoalsPage() {
           .update({
             title:
               editGoalTitle.trim(),
+
             description:
               editGoalWhy.trim() ||
               null,
+
             target_date:
-              editGoalDate || null,
+              editGoalDate ||
+              null,
+
             updated_at:
               new Date().toISOString(),
           })
-          .eq("id", goalId);
+          .eq(
+            "id",
+            goalId
+          );
 
       if (error) {
         console.error(error);
+
         setError(
           "Could not save goal changes."
         );
+
         return;
       }
 
       cancelEditingGoal();
+
       await loadGoals();
     } finally {
       setSaving(false);
@@ -477,8 +877,12 @@ export default function GoalsPage() {
   // EDIT EXISTING ACTION
   // ------------------------------
 
-  function startEditingAction(action: GoalAction) {
-    if (!action.id) return;
+  function startEditingAction(
+    action: GoalAction
+  ) {
+    if (!action.id) {
+      return;
+    }
 
     setEditingExistingActionId(
       action.id
@@ -494,32 +898,56 @@ export default function GoalsPage() {
 
     setEditActionValue(
       String(
-        action.target_value || 1
+        action.target_value ||
+          1
       )
     );
 
     setEditActionUnit(
-      action.unit || "completion"
+      action.unit ||
+        "completion"
     );
 
     setEditActionCalendarMatch(
-      action.calendar_match || ""
+      action.calendar_match ||
+        ""
     );
   }
 
   function cancelEditingAction() {
-    setEditingExistingActionId(null);
-    setEditActionTitle("");
-    setEditActionFrequency("daily");
-    setEditActionValue("1");
-    setEditActionUnit("completion");
-    setEditActionCalendarMatch("");
+    setEditingExistingActionId(
+      null
+    );
+
+    setEditActionTitle(
+      ""
+    );
+
+    setEditActionFrequency(
+      "daily"
+    );
+
+    setEditActionValue(
+      "1"
+    );
+
+    setEditActionUnit(
+      "completion"
+    );
+
+    setEditActionCalendarMatch(
+      ""
+    );
   }
 
   async function saveEditedAction(
     actionId: string
   ) {
-    if (!editActionTitle.trim()) return;
+    if (
+      !editActionTitle.trim()
+    ) {
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -527,36 +955,49 @@ export default function GoalsPage() {
     try {
       const { error } =
         await supabase
-          .from("goal_targets")
+          .from(
+            "goal_targets"
+          )
           .update({
             title:
               editActionTitle.trim(),
+
             frequency:
               editActionFrequency,
+
             target_value:
               Number(
                 editActionValue
               ) || 1,
+
             unit:
               editActionUnit.trim() ||
               "completion",
+
             calendar_match:
               editActionCalendarMatch.trim() ||
               null,
+
             updated_at:
               new Date().toISOString(),
           })
-          .eq("id", actionId);
+          .eq(
+            "id",
+            actionId
+          );
 
       if (error) {
         console.error(error);
+
         setError(
           "Could not save action changes."
         );
+
         return;
       }
 
       cancelEditingAction();
+
       await loadGoals();
     } finally {
       setSaving(false);
@@ -570,7 +1011,11 @@ export default function GoalsPage() {
   async function addManualAction(
     goalId: string
   ) {
-    if (!manualTitle.trim()) return;
+    if (
+      !manualTitle.trim()
+    ) {
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -578,50 +1023,85 @@ export default function GoalsPage() {
     try {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
       if (!user) {
-        setError("Could not load your account.");
+        setError(
+          "Could not load your account."
+        );
+
         return;
       }
 
       const { error } =
         await supabase
-          .from("goal_targets")
+          .from(
+            "goal_targets"
+          )
           .insert({
-            goal_id: goalId,
-            user_id: user.id,
+            goal_id:
+              goalId,
+
+            user_id:
+              user.id,
+
             title:
               manualTitle.trim(),
+
             frequency:
               manualFrequency,
+
             target_value:
               Number(
                 manualValue
               ) || 1,
+
             unit:
               manualUnit.trim() ||
               "completion",
+
             calendar_match:
               manualCalendarMatch.trim() ||
               null,
-            active: true,
+
+            active:
+              true,
           });
 
       if (error) {
         console.error(error);
+
         setError(
           "Could not add action."
         );
+
         return;
       }
 
-      setManualGoalId(null);
-      setManualTitle("");
-      setManualFrequency("daily");
-      setManualValue("1");
-      setManualUnit("completion");
-      setManualCalendarMatch("");
+      setManualGoalId(
+        null
+      );
+
+      setManualTitle(
+        ""
+      );
+
+      setManualFrequency(
+        "daily"
+      );
+
+      setManualValue(
+        "1"
+      );
+
+      setManualUnit(
+        "completion"
+      );
+
+      setManualCalendarMatch(
+        ""
+      );
 
       await loadGoals();
     } finally {
@@ -637,23 +1117,34 @@ export default function GoalsPage() {
         "Remove this action from the goal?"
       );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     const { error } =
       await supabase
-        .from("goal_targets")
+        .from(
+          "goal_targets"
+        )
         .update({
-          active: false,
+          active:
+            false,
+
           updated_at:
             new Date().toISOString(),
         })
-        .eq("id", id);
+        .eq(
+          "id",
+          id
+        );
 
     if (error) {
       console.error(error);
+
       setError(
         "Could not remove action."
       );
+
       return;
     }
 
@@ -661,7 +1152,7 @@ export default function GoalsPage() {
   }
 
   // ------------------------------
-  // GOAL STATUS / ARCHIVE
+  // GOAL STATUS
   // ------------------------------
 
   async function changeGoalStatus(
@@ -673,16 +1164,22 @@ export default function GoalsPage() {
         .from("goals")
         .update({
           status,
+
           updated_at:
             new Date().toISOString(),
         })
-        .eq("id", id);
+        .eq(
+          "id",
+          id
+        );
 
     if (error) {
       console.error(error);
+
       setError(
         "Could not update goal."
       );
+
       return;
     }
 
@@ -695,7 +1192,9 @@ export default function GoalsPage() {
     }
   }
 
-  async function archiveGoal(id: string) {
+  async function archiveGoal(
+    id: string
+  ) {
     setGoalMenu(null);
 
     await changeGoalStatus(
@@ -706,22 +1205,31 @@ export default function GoalsPage() {
     await loadArchivedGoals();
   }
 
-  async function restoreGoal(id: string) {
+  async function restoreGoal(
+    id: string
+  ) {
     const { error } =
       await supabase
         .from("goals")
         .update({
-          status: "active",
+          status:
+            "active",
+
           updated_at:
             new Date().toISOString(),
         })
-        .eq("id", id);
+        .eq(
+          "id",
+          id
+        );
 
     if (error) {
       console.error(error);
+
       setError(
         "Could not restore goal."
       );
+
       return;
     }
 
@@ -738,7 +1246,9 @@ export default function GoalsPage() {
         `Permanently delete "${title}"?\n\nThis will also delete its actions and progress. This cannot be undone.`
       );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setGoalMenu(null);
 
@@ -746,13 +1256,18 @@ export default function GoalsPage() {
       await supabase
         .from("goals")
         .delete()
-        .eq("id", id);
+        .eq(
+          "id",
+          id
+        );
 
     if (error) {
       console.error(error);
+
       setError(
         "Could not delete goal."
       );
+
       return;
     }
 
@@ -790,7 +1305,9 @@ export default function GoalsPage() {
             {!creating && (
               <button
                 onClick={() =>
-                  setCreating(true)
+                  setCreating(
+                    true
+                  )
                 }
                 className="shrink-0 rounded-2xl bg-violet-500 px-4 py-3 text-sm font-medium"
               >
@@ -808,6 +1325,7 @@ export default function GoalsPage() {
 
         {creating && (
           <section className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+
             <p className="text-xs text-violet-400">
               NEW GOAL
             </p>
@@ -863,7 +1381,9 @@ export default function GoalsPage() {
             />
 
             <button
-              onClick={buildWithAI}
+              onClick={
+                buildWithAI
+              }
               disabled={
                 building ||
                 !goalTitle.trim()
@@ -887,16 +1407,27 @@ export default function GoalsPage() {
                 </p>
 
                 <div className="mt-4 space-y-3">
+
                   {suggestedActions.map(
-                    (action, index) => (
+                    (
+                      action,
+                      index
+                    ) => (
                       <div
-                        key={index}
+                        key={
+                          index
+                        }
                         className="rounded-2xl bg-[#111113] p-4"
                       >
-                        {editingSuggestedAction === index ? (
+                        {editingSuggestedAction ===
+                        index ? (
                           <ActionEditor
-                            title={action.title}
-                            frequency={action.frequency}
+                            title={
+                              action.title
+                            }
+                            frequency={
+                              action.frequency
+                            }
                             value={String(
                               action.target_value
                             )}
@@ -908,15 +1439,32 @@ export default function GoalsPage() {
                               action.calendar_match ||
                               ""
                             }
-                            onTitleChange={(value) =>
+                            calendarOptions={
+                              calendarOptions
+                            }
+                            calendarConnected={
+                              calendarConnected
+                            }
+                            calendarLoading={
+                              calendarLoading
+                            }
+                            onRefreshCalendar={
+                              loadCalendarOptions
+                            }
+                            onTitleChange={(
+                              value
+                            ) =>
                               updateSuggestedAction(
                                 index,
                                 {
-                                  title: value,
+                                  title:
+                                    value,
                                 }
                               )
                             }
-                            onFrequencyChange={(value) =>
+                            onFrequencyChange={(
+                              value
+                            ) =>
                               updateSuggestedAction(
                                 index,
                                 {
@@ -925,26 +1473,34 @@ export default function GoalsPage() {
                                 }
                               )
                             }
-                            onValueChange={(value) =>
+                            onValueChange={(
+                              value
+                            ) =>
                               updateSuggestedAction(
                                 index,
                                 {
                                   target_value:
                                     Number(
                                       value
-                                    ) || 1,
+                                    ) ||
+                                    1,
                                 }
                               )
                             }
-                            onUnitChange={(value) =>
+                            onUnitChange={(
+                              value
+                            ) =>
                               updateSuggestedAction(
                                 index,
                                 {
-                                  unit: value,
+                                  unit:
+                                    value,
                                 }
                               )
                             }
-                            onCalendarChange={(value) =>
+                            onCalendarChange={(
+                              value
+                            ) =>
                               updateSuggestedAction(
                                 index,
                                 {
@@ -962,6 +1518,7 @@ export default function GoalsPage() {
                           />
                         ) : (
                           <div className="flex items-start justify-between gap-4">
+
                             <div>
                               <p className="text-zinc-200">
                                 {action.title ||
@@ -1024,8 +1581,12 @@ export default function GoalsPage() {
                 </button>
 
                 <button
-                  onClick={saveGoal}
-                  disabled={saving}
+                  onClick={
+                    saveGoal
+                  }
+                  disabled={
+                    saving
+                  }
                   className="mt-6 w-full rounded-2xl bg-white px-4 py-4 font-medium text-black disabled:opacity-40"
                 >
                   {saving
@@ -1036,7 +1597,9 @@ export default function GoalsPage() {
             )}
 
             <button
-              onClick={resetNewGoal}
+              onClick={
+                resetNewGoal
+              }
               className="mt-4 w-full py-3 text-sm text-zinc-600"
             >
               Cancel
@@ -1067,6 +1630,7 @@ export default function GoalsPage() {
           </div>
         ) : goals.length === 0 ? (
           <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+
             <p className="text-lg font-medium">
               No active goals yet.
             </p>
@@ -1077,448 +1641,509 @@ export default function GoalsPage() {
           </div>
         ) : (
           <div className="space-y-5">
-            {goals.map((goal) => {
-              const actions =
-                goal.goal_targets?.filter(
-                  (action) =>
-                    action.active
-                ) || [];
 
-              const isEditing =
-                editingGoalId === goal.id;
+            {goals.map(
+              (goal) => {
+                const actions =
+                  goal.goal_targets?.filter(
+                    (
+                      action
+                    ) =>
+                      action.active
+                  ) || [];
 
-              return (
-                <section
-                  key={goal.id}
-                  className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
-                >
+                const isEditing =
+                  editingGoalId ===
+                  goal.id;
 
-                  {isEditing ? (
-                    <>
-                      <p className="text-xs text-violet-400">
-                        EDIT BIG GOAL
-                      </p>
+                return (
+                  <section
+                    key={
+                      goal.id
+                    }
+                    className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
+                  >
 
-                      <label className="mb-2 mt-5 block text-xs text-zinc-600">
-                        Goal
-                      </label>
+                    {isEditing ? (
+                      <>
+                        <p className="text-xs text-violet-400">
+                          EDIT BIG GOAL
+                        </p>
 
-                      <input
-                        value={
-                          editGoalTitle
-                        }
-                        onChange={(e) =>
-                          setEditGoalTitle(
-                            e.target.value
-                          )
-                        }
-                        className="mb-4 w-full rounded-xl border border-zinc-800 bg-[#111113] px-4 py-3 outline-none"
-                      />
+                        <label className="mb-2 mt-5 block text-xs text-zinc-600">
+                          Goal
+                        </label>
 
-                      <label className="mb-2 block text-xs text-zinc-600">
-                        Why it matters
-                      </label>
-
-                      <textarea
-                        value={
-                          editGoalWhy
-                        }
-                        onChange={(e) =>
-                          setEditGoalWhy(
-                            e.target.value
-                          )
-                        }
-                        rows={3}
-                        className="mb-4 w-full resize-none rounded-xl border border-zinc-800 bg-[#111113] px-4 py-3 outline-none"
-                      />
-
-                      <label className="mb-2 block text-xs text-zinc-600">
-                        Target date
-                      </label>
-
-                      <input
-                        type="date"
-                        value={
-                          editGoalDate
-                        }
-                        onChange={(e) =>
-                          setEditGoalDate(
-                            e.target.value
-                          )
-                        }
-                        className="mb-5 w-full rounded-xl border border-zinc-800 bg-[#111113] px-4 py-3 outline-none"
-                      />
-
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() =>
-                            saveEditedGoal(
-                              goal.id
+                        <input
+                          value={
+                            editGoalTitle
+                          }
+                          onChange={(
+                            e
+                          ) =>
+                            setEditGoalTitle(
+                              e.target.value
                             )
                           }
-                          disabled={
-                            saving ||
-                            !editGoalTitle.trim()
+                          className="mb-4 w-full rounded-xl border border-zinc-800 bg-[#111113] px-4 py-3 outline-none"
+                        />
+
+                        <label className="mb-2 block text-xs text-zinc-600">
+                          Why it matters
+                        </label>
+
+                        <textarea
+                          value={
+                            editGoalWhy
                           }
-                          className="flex-1 rounded-xl bg-violet-500 px-4 py-3 font-medium disabled:opacity-40"
-                        >
-                          Save changes
-                        </button>
-
-                        <button
-                          onClick={
-                            cancelEditingGoal
+                          onChange={(
+                            e
+                          ) =>
+                            setEditGoalWhy(
+                              e.target.value
+                            )
                           }
-                          className="rounded-xl border border-zinc-800 px-4 py-3 text-zinc-500"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="mb-5">
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="text-xs uppercase tracking-wide text-violet-400">
-                              Big goal
-                            </p>
+                          rows={
+                            3
+                          }
+                          className="mb-4 w-full resize-none rounded-xl border border-zinc-800 bg-[#111113] px-4 py-3 outline-none"
+                        />
 
-                            <h2 className="mt-2 text-xl font-semibold">
-                              {goal.title}
-                            </h2>
-                          </div>
+                        <label className="mb-2 block text-xs text-zinc-600">
+                          Target date
+                        </label>
 
-                          <span className="rounded-full border border-zinc-800 px-3 py-1 text-xs capitalize text-zinc-500">
-                            {goal.status}
-                          </span>
-                        </div>
+                        <input
+                          type="date"
+                          value={
+                            editGoalDate
+                          }
+                          onChange={(
+                            e
+                          ) =>
+                            setEditGoalDate(
+                              e.target.value
+                            )
+                          }
+                          className="mb-5 w-full rounded-xl border border-zinc-800 bg-[#111113] px-4 py-3 outline-none"
+                        />
 
-                        {goal.description && (
-                          <p className="mt-3 leading-6 text-zinc-400">
-                            {
-                              goal.description
+                        <div className="flex gap-3">
+
+                          <button
+                            onClick={() =>
+                              saveEditedGoal(
+                                goal.id
+                              )
                             }
-                          </p>
-                        )}
+                            disabled={
+                              saving ||
+                              !editGoalTitle.trim()
+                            }
+                            className="flex-1 rounded-xl bg-violet-500 px-4 py-3 font-medium disabled:opacity-40"
+                          >
+                            Save changes
+                          </button>
 
-                        {goal.target_date && (
-                          <div className="mt-4">
-                            <span className="rounded-full bg-[#151518] px-3 py-2 text-xs text-zinc-300">
-                              Target date:{" "}
-                              {new Intl.DateTimeFormat(
-                                "en-AU",
+                          <button
+                            onClick={
+                              cancelEditingGoal
+                            }
+                            className="rounded-xl border border-zinc-800 px-4 py-3 text-zinc-500"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="mb-5">
+
+                          <div className="flex items-start justify-between gap-4">
+
+                            <div>
+                              <p className="text-xs uppercase tracking-wide text-violet-400">
+                                Big goal
+                              </p>
+
+                              <h2 className="mt-2 text-xl font-semibold">
                                 {
-                                  day: "numeric",
-                                  month: "short",
-                                  year: "numeric",
+                                  goal.title
                                 }
-                              ).format(
-                                new Date(
-                                  `${goal.target_date}T00:00:00`
-                                )
-                              )}
+                              </h2>
+                            </div>
+
+                            <span className="rounded-full border border-zinc-800 px-3 py-1 text-xs capitalize text-zinc-500">
+                              {
+                                goal.status
+                              }
                             </span>
                           </div>
-                        )}
-                      </div>
 
-                      <div className="border-t border-zinc-900 pt-5">
-
-                        <div className="mb-3 flex items-center justify-between">
-                          <p className="text-sm text-zinc-500">
-                            ACTIONS TO GET THERE
-                          </p>
-
-                          <button
-                            onClick={() =>
-                              setManualGoalId(
-                                manualGoalId ===
-                                  goal.id
-                                  ? null
-                                  : goal.id
-                              )
-                            }
-                            className="text-sm text-violet-400"
-                          >
-                            + Add action
-                          </button>
-                        </div>
-
-                        <div className="space-y-3">
-                          {actions.map(
-                            (action) => {
-                              const editing =
-                                action.id ===
-                                editingExistingActionId;
-
-                              return (
-                                <div
-                                  key={action.id}
-                                  className="rounded-2xl bg-[#111113] p-4"
-                                >
-                                  {editing &&
-                                  action.id ? (
-                                    <ActionEditor
-                                      title={
-                                        editActionTitle
-                                      }
-                                      frequency={
-                                        editActionFrequency
-                                      }
-                                      value={
-                                        editActionValue
-                                      }
-                                      unit={
-                                        editActionUnit
-                                      }
-                                      calendarMatch={
-                                        editActionCalendarMatch
-                                      }
-                                      onTitleChange={
-                                        setEditActionTitle
-                                      }
-                                      onFrequencyChange={
-                                        setEditActionFrequency
-                                      }
-                                      onValueChange={
-                                        setEditActionValue
-                                      }
-                                      onUnitChange={
-                                        setEditActionUnit
-                                      }
-                                      onCalendarChange={
-                                        setEditActionCalendarMatch
-                                      }
-                                      onSave={() =>
-                                        saveEditedAction(
-                                          action.id!
-                                        )
-                                      }
-                                      onCancel={
-                                        cancelEditingAction
-                                      }
-                                      saveLabel={
-                                        saving
-                                          ? "Saving..."
-                                          : "Save action"
-                                      }
-                                    />
-                                  ) : (
-                                    <div className="flex items-start justify-between gap-4">
-                                      <div>
-                                        <p className="text-zinc-200">
-                                          {
-                                            action.title
-                                          }
-                                        </p>
-
-                                        <p className="mt-1 text-sm text-zinc-600">
-                                          {actionLabel(
-                                            action
-                                          )}
-                                        </p>
-
-                                        {action.calendar_match && (
-                                          <p className="mt-2 text-xs text-violet-400">
-                                            Calendar:{" "}
-                                            {
-                                              action.calendar_match
-                                            }
-                                          </p>
-                                        )}
-                                      </div>
-
-                                      <div className="flex items-center gap-3">
-                                        <button
-                                          onClick={() =>
-                                            startEditingAction(
-                                              action
-                                            )
-                                          }
-                                          className="text-sm text-violet-400"
-                                        >
-                                          Edit
-                                        </button>
-
-                                        {action.id && (
-                                          <button
-                                            onClick={() =>
-                                              removeExistingAction(
-                                                action.id!
-                                              )
-                                            }
-                                            className="text-xl text-zinc-700"
-                                          >
-                                            ×
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            }
+                          {goal.description && (
+                            <p className="mt-3 leading-6 text-zinc-400">
+                              {
+                                goal.description
+                              }
+                            </p>
                           )}
-                        </div>
 
-                        {manualGoalId ===
-                          goal.id && (
-                          <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#111113] p-4">
+                          {goal.target_date && (
+                            <div className="mt-4">
 
-                            <ActionEditor
-                              title={
-                                manualTitle
-                              }
-                              frequency={
-                                manualFrequency
-                              }
-                              value={
-                                manualValue
-                              }
-                              unit={
-                                manualUnit
-                              }
-                              calendarMatch={
-                                manualCalendarMatch
-                              }
-                              onTitleChange={
-                                setManualTitle
-                              }
-                              onFrequencyChange={
-                                setManualFrequency
-                              }
-                              onValueChange={
-                                setManualValue
-                              }
-                              onUnitChange={
-                                setManualUnit
-                              }
-                              onCalendarChange={
-                                setManualCalendarMatch
-                              }
-                              onSave={() =>
-                                addManualAction(
-                                  goal.id
-                                )
-                              }
-                              onCancel={() =>
-                                setManualGoalId(
-                                  null
-                                )
-                              }
-                              saveLabel="Add action"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-5 flex items-center gap-2 border-t border-zinc-900 pt-5">
-
-                        {goal.status ===
-                        "active" ? (
-                          <button
-                            onClick={() =>
-                              changeGoalStatus(
-                                goal.id,
-                                "paused"
-                              )
-                            }
-                            className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
-                          >
-                            Pause
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() =>
-                              changeGoalStatus(
-                                goal.id,
-                                "active"
-                              )
-                            }
-                            className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
-                          >
-                            Activate
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() =>
-                            changeGoalStatus(
-                              goal.id,
-                              "completed"
-                            )
-                          }
-                          className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
-                        >
-                          Complete
-                        </button>
-
-                        <div className="relative ml-auto">
-                          <button
-                            onClick={() =>
-                              setGoalMenu(
-                                goalMenu ===
-                                  goal.id
-                                  ? null
-                                  : goal.id
-                              )
-                            }
-                            className="rounded-xl px-4 py-2 text-xl text-zinc-500"
-                          >
-                            •••
-                          </button>
-
-                          {goalMenu ===
-                            goal.id && (
-                            <div className="absolute bottom-12 right-0 z-20 w-52 overflow-hidden rounded-2xl border border-zinc-800 bg-[#151518] shadow-2xl">
-
-                              <button
-                                onClick={() =>
-                                  startEditingGoal(
-                                    goal
+                              <span className="rounded-full bg-[#151518] px-3 py-2 text-xs text-zinc-300">
+                                Target date:{" "}
+                                {new Intl.DateTimeFormat(
+                                  "en-AU",
+                                  {
+                                    day:
+                                      "numeric",
+                                    month:
+                                      "short",
+                                    year:
+                                      "numeric",
+                                  }
+                                ).format(
+                                  new Date(
+                                    `${goal.target_date}T00:00:00`
                                   )
-                                }
-                                className="block w-full px-4 py-4 text-left text-sm text-violet-400"
-                              >
-                                Edit goal
-                              </button>
-
-                              <div className="border-t border-zinc-800" />
-
-                              <button
-                                onClick={() =>
-                                  archiveGoal(
-                                    goal.id
-                                  )
-                                }
-                                className="block w-full px-4 py-4 text-left text-sm text-zinc-300"
-                              >
-                                Archive goal
-                              </button>
-
-                              <div className="border-t border-zinc-800" />
-
-                              <button
-                                onClick={() =>
-                                  deleteGoal(
-                                    goal.id,
-                                    goal.title
-                                  )
-                                }
-                                className="block w-full px-4 py-4 text-left text-sm text-red-400"
-                              >
-                                Delete permanently
-                              </button>
+                                )}
+                              </span>
                             </div>
                           )}
                         </div>
-                      </div>
-                    </>
-                  )}
-                </section>
-              );
-            })}
+
+                        <div className="border-t border-zinc-900 pt-5">
+
+                          <div className="mb-3 flex items-center justify-between">
+
+                            <p className="text-sm text-zinc-500">
+                              ACTIONS TO GET THERE
+                            </p>
+
+                            <button
+                              onClick={() =>
+                                setManualGoalId(
+                                  manualGoalId ===
+                                    goal.id
+                                    ? null
+                                    : goal.id
+                                )
+                              }
+                              className="text-sm text-violet-400"
+                            >
+                              + Add action
+                            </button>
+                          </div>
+
+                          <div className="space-y-3">
+
+                            {actions.map(
+                              (
+                                action
+                              ) => {
+                                const editing =
+                                  action.id ===
+                                  editingExistingActionId;
+
+                                return (
+                                  <div
+                                    key={
+                                      action.id
+                                    }
+                                    className="rounded-2xl bg-[#111113] p-4"
+                                  >
+
+                                    {editing &&
+                                    action.id ? (
+                                      <ActionEditor
+                                        title={
+                                          editActionTitle
+                                        }
+                                        frequency={
+                                          editActionFrequency
+                                        }
+                                        value={
+                                          editActionValue
+                                        }
+                                        unit={
+                                          editActionUnit
+                                        }
+                                        calendarMatch={
+                                          editActionCalendarMatch
+                                        }
+                                        calendarOptions={
+                                          calendarOptions
+                                        }
+                                        calendarConnected={
+                                          calendarConnected
+                                        }
+                                        calendarLoading={
+                                          calendarLoading
+                                        }
+                                        onRefreshCalendar={
+                                          loadCalendarOptions
+                                        }
+                                        onTitleChange={
+                                          setEditActionTitle
+                                        }
+                                        onFrequencyChange={
+                                          setEditActionFrequency
+                                        }
+                                        onValueChange={
+                                          setEditActionValue
+                                        }
+                                        onUnitChange={
+                                          setEditActionUnit
+                                        }
+                                        onCalendarChange={
+                                          setEditActionCalendarMatch
+                                        }
+                                        onSave={() =>
+                                          saveEditedAction(
+                                            action.id!
+                                          )
+                                        }
+                                        onCancel={
+                                          cancelEditingAction
+                                        }
+                                        saveLabel={
+                                          saving
+                                            ? "Saving..."
+                                            : "Save action"
+                                        }
+                                      />
+                                    ) : (
+                                      <div className="flex items-start justify-between gap-4">
+
+                                        <div>
+                                          <p className="text-zinc-200">
+                                            {
+                                              action.title
+                                            }
+                                          </p>
+
+                                          <p className="mt-1 text-sm text-zinc-600">
+                                            {actionLabel(
+                                              action
+                                            )}
+                                          </p>
+
+                                          {action.calendar_match && (
+                                            <p className="mt-2 text-xs text-violet-400">
+                                              Calendar:{" "}
+                                              {
+                                                action.calendar_match
+                                              }
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        <div className="flex items-center gap-3">
+
+                                          <button
+                                            onClick={() =>
+                                              startEditingAction(
+                                                action
+                                              )
+                                            }
+                                            className="text-sm text-violet-400"
+                                          >
+                                            Edit
+                                          </button>
+
+                                          {action.id && (
+                                            <button
+                                              onClick={() =>
+                                                removeExistingAction(
+                                                  action.id!
+                                                )
+                                              }
+                                              className="text-xl text-zinc-700"
+                                            >
+                                              ×
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              }
+                            )}
+                          </div>
+
+                          {manualGoalId ===
+                            goal.id && (
+                            <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#111113] p-4">
+
+                              <ActionEditor
+                                title={
+                                  manualTitle
+                                }
+                                frequency={
+                                  manualFrequency
+                                }
+                                value={
+                                  manualValue
+                                }
+                                unit={
+                                  manualUnit
+                                }
+                                calendarMatch={
+                                  manualCalendarMatch
+                                }
+                                calendarOptions={
+                                  calendarOptions
+                                }
+                                calendarConnected={
+                                  calendarConnected
+                                }
+                                calendarLoading={
+                                  calendarLoading
+                                }
+                                onRefreshCalendar={
+                                  loadCalendarOptions
+                                }
+                                onTitleChange={
+                                  setManualTitle
+                                }
+                                onFrequencyChange={
+                                  setManualFrequency
+                                }
+                                onValueChange={
+                                  setManualValue
+                                }
+                                onUnitChange={
+                                  setManualUnit
+                                }
+                                onCalendarChange={
+                                  setManualCalendarMatch
+                                }
+                                onSave={() =>
+                                  addManualAction(
+                                    goal.id
+                                  )
+                                }
+                                onCancel={() =>
+                                  setManualGoalId(
+                                    null
+                                  )
+                                }
+                                saveLabel="Add action"
+                              />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-5 flex items-center gap-2 border-t border-zinc-900 pt-5">
+
+                          {goal.status ===
+                          "active" ? (
+                            <button
+                              onClick={() =>
+                                changeGoalStatus(
+                                  goal.id,
+                                  "paused"
+                                )
+                              }
+                              className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
+                            >
+                              Pause
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() =>
+                                changeGoalStatus(
+                                  goal.id,
+                                  "active"
+                                )
+                              }
+                              className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
+                            >
+                              Activate
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() =>
+                              changeGoalStatus(
+                                goal.id,
+                                "completed"
+                              )
+                            }
+                            className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
+                          >
+                            Complete
+                          </button>
+
+                          <div className="relative ml-auto">
+
+                            <button
+                              onClick={() =>
+                                setGoalMenu(
+                                  goalMenu ===
+                                    goal.id
+                                    ? null
+                                    : goal.id
+                                )
+                              }
+                              className="rounded-xl px-4 py-2 text-xl text-zinc-500"
+                            >
+                              •••
+                            </button>
+
+                            {goalMenu ===
+                              goal.id && (
+                              <div className="absolute bottom-12 right-0 z-20 w-52 overflow-hidden rounded-2xl border border-zinc-800 bg-[#151518] shadow-2xl">
+
+                                <button
+                                  onClick={() =>
+                                    startEditingGoal(
+                                      goal
+                                    )
+                                  }
+                                  className="block w-full px-4 py-4 text-left text-sm text-violet-400"
+                                >
+                                  Edit goal
+                                </button>
+
+                                <div className="border-t border-zinc-800" />
+
+                                <button
+                                  onClick={() =>
+                                    archiveGoal(
+                                      goal.id
+                                    )
+                                  }
+                                  className="block w-full px-4 py-4 text-left text-sm text-zinc-300"
+                                >
+                                  Archive goal
+                                </button>
+
+                                <div className="border-t border-zinc-800" />
+
+                                <button
+                                  onClick={() =>
+                                    deleteGoal(
+                                      goal.id,
+                                      goal.title
+                                    )
+                                  }
+                                  className="block w-full px-4 py-4 text-left text-sm text-red-400"
+                                >
+                                  Delete permanently
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </section>
+                );
+              }
+            )}
           </div>
         )}
 
@@ -1526,7 +2151,9 @@ export default function GoalsPage() {
 
           <button
             onClick={async () => {
-              if (!showArchived) {
+              if (
+                !showArchived
+              ) {
                 await loadArchivedGoals();
               }
 
@@ -1565,12 +2192,16 @@ export default function GoalsPage() {
                 archivedGoals.map(
                   (goal) => (
                     <div
-                      key={goal.id}
+                      key={
+                        goal.id
+                      }
                       className="flex items-center justify-between rounded-2xl bg-[#111113] px-4 py-4"
                     >
                       <div className="min-w-0 pr-4">
                         <p className="truncate text-zinc-400">
-                          {goal.title}
+                          {
+                            goal.title
+                          }
                         </p>
 
                         <p className="mt-1 text-xs text-zinc-700">
@@ -1579,6 +2210,7 @@ export default function GoalsPage() {
                       </div>
 
                       <div className="flex shrink-0 gap-3">
+
                         <button
                           onClick={() =>
                             restoreGoal(
@@ -1620,6 +2252,10 @@ function ActionEditor({
   value,
   unit,
   calendarMatch,
+  calendarOptions,
+  calendarConnected,
+  calendarLoading,
+  onRefreshCalendar,
   onTitleChange,
   onFrequencyChange,
   onValueChange,
@@ -1635,17 +2271,44 @@ function ActionEditor({
   unit: string;
   calendarMatch: string;
 
-  onTitleChange: (value: string) => void;
-  onFrequencyChange: (value: Frequency) => void;
-  onValueChange: (value: string) => void;
-  onUnitChange: (value: string) => void;
-  onCalendarChange: (value: string) => void;
+  calendarOptions: string[];
+  calendarConnected: boolean;
+  calendarLoading: boolean;
+
+  onRefreshCalendar: () => void;
+
+  onTitleChange: (
+    value: string
+  ) => void;
+
+  onFrequencyChange: (
+    value: Frequency
+  ) => void;
+
+  onValueChange: (
+    value: string
+  ) => void;
+
+  onUnitChange: (
+    value: string
+  ) => void;
+
+  onCalendarChange: (
+    value: string
+  ) => void;
 
   onSave: () => void;
+
   onCancel?: () => void;
 
   saveLabel: string;
 }) {
+  const existingCustomMatch =
+    calendarMatch &&
+    !calendarOptions.includes(
+      calendarMatch
+    );
+
   return (
     <>
       <label className="mb-2 block text-xs text-zinc-600">
@@ -1723,32 +2386,95 @@ function ActionEditor({
         </div>
       </div>
 
-      <label className="mb-2 block text-xs text-zinc-600">
-        Calendar match
-        <span className="ml-1 text-zinc-700">
-          Optional
-        </span>
-      </label>
+      <div className="mb-2 flex items-center justify-between">
 
-      <input
-        value={calendarMatch}
-        onChange={(e) =>
-          onCalendarChange(
-            e.target.value
-          )
-        }
-        placeholder="e.g. Gym"
-        className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
-      />
+        <label className="block text-xs text-zinc-600">
+          Match to Google Calendar
+          <span className="ml-1 text-zinc-700">
+            Optional
+          </span>
+        </label>
+
+        <button
+          type="button"
+          onClick={
+            onRefreshCalendar
+          }
+          className="text-xs text-violet-400"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {calendarLoading ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-600">
+          Loading calendar events...
+        </div>
+      ) : !calendarConnected ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-600">
+          Google Calendar is not connected.
+        </div>
+      ) : calendarOptions.length ===
+        0 ? (
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 text-sm text-zinc-600">
+          No calendar events found in the next 7 days.
+        </div>
+      ) : (
+        <select
+          value={
+            calendarMatch
+          }
+          onChange={(e) =>
+            onCalendarChange(
+              e.target.value
+            )
+          }
+          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
+        >
+          <option value="">
+            None — don&apos;t match to calendar
+          </option>
+
+          {existingCustomMatch && (
+            <option
+              value={
+                calendarMatch
+              }
+            >
+              {calendarMatch}
+            </option>
+          )}
+
+          {calendarOptions.map(
+            (option) => (
+              <option
+                key={
+                  option
+                }
+                value={
+                  option
+                }
+              >
+                {option}
+              </option>
+            )
+          )}
+        </select>
+      )}
 
       <p className="mt-2 text-xs leading-5 text-zinc-700">
-        Example: if the action is Strength training but your Google Calendar event says Gym, enter Gym here.
+        Choose the event that represents this action. For example, Strength training → Gym.
       </p>
 
       <div className="mt-4 flex gap-3">
+
         <button
-          onClick={onSave}
-          disabled={!title.trim()}
+          onClick={
+            onSave
+          }
+          disabled={
+            !title.trim()
+          }
           className="flex-1 rounded-xl bg-violet-500 px-4 py-3 font-medium disabled:opacity-40"
         >
           {saveLabel}
@@ -1756,7 +2482,9 @@ function ActionEditor({
 
         {onCancel && (
           <button
-            onClick={onCancel}
+            onClick={
+              onCancel
+            }
             className="rounded-xl border border-zinc-800 px-4 py-3 text-zinc-500"
           >
             Cancel
