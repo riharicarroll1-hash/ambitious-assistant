@@ -40,14 +40,10 @@ function actionLabel(action: GoalAction) {
   }
 
   if (action.frequency === "daily") {
-    return `${action.target_value} ${
-      action.unit || ""
-    } / day`;
+    return `${action.target_value} ${action.unit || ""} / day`;
   }
 
-  return `${action.target_value} ${
-    action.unit || ""
-  } / week`;
+  return `${action.target_value} ${action.unit || ""} / week`;
 }
 
 export default function GoalsPage() {
@@ -56,29 +52,22 @@ export default function GoalsPage() {
   const [error, setError] = useState("");
 
   const [creating, setCreating] = useState(false);
-
   const [goalTitle, setGoalTitle] = useState("");
   const [goalWhy, setGoalWhy] = useState("");
   const [goalDate, setGoalDate] = useState("");
 
-  const [suggestedActions, setSuggestedActions] =
-    useState<GoalAction[]>([]);
-
+  const [suggestedActions, setSuggestedActions] = useState<GoalAction[]>([]);
   const [building, setBuilding] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [editingAction, setEditingAction] =
-    useState<number | null>(null);
+  const [editingAction, setEditingAction] = useState<number | null>(null);
 
-  const [manualGoalId, setManualGoalId] =
-    useState<string | null>(null);
-
+  const [manualGoalId, setManualGoalId] = useState<string | null>(null);
   const [manualTitle, setManualTitle] = useState("");
   const [manualFrequency, setManualFrequency] =
     useState<Frequency>("daily");
   const [manualValue, setManualValue] = useState("1");
-  const [manualUnit, setManualUnit] =
-    useState("completion");
+  const [manualUnit, setManualUnit] = useState("completion");
 
   useEffect(() => {
     loadGoals();
@@ -153,41 +142,32 @@ export default function GoalsPage() {
     setError("");
 
     try {
-      const response = await fetch(
-        "/api/goals/build",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            goal: goalTitle,
-            why: goalWhy,
-            deadline: goalDate,
-          }),
-        }
-      );
+      const response = await fetch("/api/goals/build", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          goal: goalTitle,
+          why: goalWhy,
+          deadline: goalDate,
+        }),
+      });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setError(
-          data.error ||
-            "Could not build your goal."
-        );
+        setError(data.error || "Could not build your goal.");
         return;
       }
 
       setSuggestedActions(
-        (data.actions || []).map(
-          (action: GoalAction) => ({
-            title: action.title,
-            frequency: action.frequency,
-            target_value:
-              Number(action.target_value) || 1,
-            unit: action.unit || "completion",
-          })
-        )
+        (data.actions || []).map((action: GoalAction) => ({
+          title: action.title,
+          frequency: action.frequency,
+          target_value: Number(action.target_value) || 1,
+          unit: action.unit || "completion",
+        }))
       );
     } catch (err) {
       console.error(err);
@@ -213,16 +193,12 @@ export default function GoalsPage() {
         return;
       }
 
-      const {
-        data: goal,
-        error: goalError,
-      } = await supabase
+      const { data: goal, error: goalError } = await supabase
         .from("goals")
         .insert({
           user_id: user.id,
           title: goalTitle.trim(),
-          description:
-            goalWhy.trim() || null,
+          description: goalWhy.trim() || null,
           target_date: goalDate || null,
           status: "active",
         })
@@ -235,26 +211,24 @@ export default function GoalsPage() {
         return;
       }
 
-      if (suggestedActions.length > 0) {
-        const rows = suggestedActions.map(
-          (action) => ({
-            goal_id: goal.id,
-            user_id: user.id,
-            title: action.title.trim(),
-            frequency: action.frequency,
-            target_value:
-              Number(action.target_value) || 1,
-            unit:
-              action.unit?.trim() ||
-              "completion",
-            active: true,
-          })
-        );
+      const validActions = suggestedActions.filter(
+        (action) => action.title.trim()
+      );
 
-        const { error: actionsError } =
-          await supabase
-            .from("goal_targets")
-            .insert(rows);
+      if (validActions.length > 0) {
+        const rows = validActions.map((action) => ({
+          goal_id: goal.id,
+          user_id: user.id,
+          title: action.title.trim(),
+          frequency: action.frequency,
+          target_value: Number(action.target_value) || 1,
+          unit: action.unit?.trim() || "completion",
+          active: true,
+        }));
+
+        const { error: actionsError } = await supabase
+          .from("goal_targets")
+          .insert(rows);
 
         if (actionsError) {
           console.error(actionsError);
@@ -294,6 +268,8 @@ export default function GoalsPage() {
   }
 
   function addBlankSuggestedAction() {
+    const newIndex = suggestedActions.length;
+
     setSuggestedActions((current) => [
       ...current,
       {
@@ -304,20 +280,24 @@ export default function GoalsPage() {
       },
     ]);
 
-    setEditingAction(suggestedActions.length);
+    setEditingAction(newIndex);
   }
 
   async function addManualAction(goalId: string) {
     if (!manualTitle.trim()) return;
 
     setSaving(true);
+    setError("");
 
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setError("Could not load your account.");
+        return;
+      }
 
       const { error } = await supabase
         .from("goal_targets")
@@ -326,10 +306,8 @@ export default function GoalsPage() {
           user_id: user.id,
           title: manualTitle.trim(),
           frequency: manualFrequency,
-          target_value:
-            Number(manualValue) || 1,
-          unit:
-            manualUnit.trim() || "completion",
+          target_value: Number(manualValue) || 1,
+          unit: manualUnit.trim() || "completion",
           active: true,
         });
 
@@ -361,6 +339,7 @@ export default function GoalsPage() {
       .eq("id", id);
 
     if (error) {
+      console.error(error);
       setError("Could not remove action.");
       return;
     }
@@ -381,6 +360,7 @@ export default function GoalsPage() {
       .eq("id", id);
 
     if (error) {
+      console.error(error);
       setError("Could not update goal.");
       return;
     }
@@ -391,7 +371,6 @@ export default function GoalsPage() {
   return (
     <main className="min-h-screen bg-[#0b0b0d] text-white">
       <div className="mx-auto max-w-md px-5 pb-24 pt-14">
-
         <header className="mb-8">
           <Link
             href="/"
@@ -434,7 +413,6 @@ export default function GoalsPage() {
 
         {creating && (
           <section className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
-
             <div className="mb-6">
               <p className="text-xs text-violet-400">
                 NEW GOAL
@@ -500,7 +478,6 @@ export default function GoalsPage() {
 
             {suggestedActions.length > 0 && (
               <div className="mt-8 border-t border-zinc-900 pt-6">
-
                 <div className="mb-4">
                   <p className="text-xs text-violet-400">
                     ACTIONS TO GET THERE
@@ -547,8 +524,7 @@ export default function GoalsPage() {
                                   index,
                                   {
                                     frequency:
-                                      e.target
-                                        .value as Frequency,
+                                      e.target.value as Frequency,
                                   }
                                 )
                               }
@@ -578,8 +554,7 @@ export default function GoalsPage() {
                                       {
                                         target_value:
                                           Number(
-                                            e.target
-                                              .value
+                                            e.target.value
                                           ) || 1,
                                       }
                                     )
@@ -603,8 +578,7 @@ export default function GoalsPage() {
                                       index,
                                       {
                                         unit:
-                                          e.target
-                                            .value,
+                                          e.target.value,
                                       }
                                     )
                                   }
@@ -639,9 +613,7 @@ export default function GoalsPage() {
                             <div className="flex gap-3">
                               <button
                                 onClick={() =>
-                                  setEditingAction(
-                                    index
-                                  )
+                                  setEditingAction(index)
                                 }
                                 className="text-sm text-violet-400"
                               >
@@ -650,9 +622,7 @@ export default function GoalsPage() {
 
                               <button
                                 onClick={() =>
-                                  removeSuggestedAction(
-                                    index
-                                  )
+                                  removeSuggestedAction(index)
                                 }
                                 className="text-xl text-zinc-700"
                               >
@@ -702,8 +672,7 @@ export default function GoalsPage() {
           <span className="text-xs text-zinc-700">
             {
               goals.filter(
-                (goal) =>
-                  goal.status === "active"
+                (goal) => goal.status === "active"
               ).length
             }{" "}
             active
@@ -715,4 +684,280 @@ export default function GoalsPage() {
             Loading goals...
           </div>
         ) : goals.length === 0 ? (
-          <div
+          <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+            <p className="text-lg font-medium">
+              No active goals yet.
+            </p>
+
+            <p className="mt-2 leading-6 text-zinc-500">
+              Add the outcome you want and let
+              Ambitious help build the actions
+              underneath it.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-5">
+            {goals.map((goal) => {
+              const actions =
+                goal.goal_targets?.filter(
+                  (action) => action.active
+                ) || [];
+
+              return (
+                <section
+                  key={goal.id}
+                  className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
+                >
+                  <div className="mb-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-violet-400">
+                          Big goal
+                        </p>
+
+                        <h2 className="mt-2 text-xl font-semibold">
+                          {goal.title}
+                        </h2>
+                      </div>
+
+                      <span className="rounded-full border border-zinc-800 px-3 py-1 text-xs capitalize text-zinc-500">
+                        {goal.status}
+                      </span>
+                    </div>
+
+                    {goal.description && (
+                      <p className="mt-3 leading-6 text-zinc-400">
+                        {goal.description}
+                      </p>
+                    )}
+
+                    {goal.target_date && (
+                      <div className="mt-4">
+                        <span className="rounded-full bg-[#151518] px-3 py-2 text-xs text-zinc-300">
+                          Target date:{" "}
+                          {new Intl.DateTimeFormat(
+                            "en-AU",
+                            {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            }
+                          ).format(
+                            new Date(
+                              `${goal.target_date}T00:00:00`
+                            )
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t border-zinc-900 pt-5">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-zinc-500">
+                          ACTIONS TO GET THERE
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          setManualGoalId(
+                            manualGoalId === goal.id
+                              ? null
+                              : goal.id
+                          )
+                        }
+                        className="text-sm text-violet-400"
+                      >
+                        + Add action
+                      </button>
+                    </div>
+
+                    {actions.length === 0 ? (
+                      <p className="text-sm text-zinc-600">
+                        No actions yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {actions.map((action) => (
+                          <div
+                            key={action.id}
+                            className="flex items-center justify-between gap-4 rounded-2xl bg-[#111113] px-4 py-4"
+                          >
+                            <div>
+                              <p className="text-zinc-200">
+                                {action.title}
+                              </p>
+
+                              <p className="mt-1 text-sm text-zinc-600">
+                                {actionLabel(action)}
+                              </p>
+                            </div>
+
+                            {action.id && (
+                              <button
+                                onClick={() =>
+                                  removeExistingAction(
+                                    action.id!
+                                  )
+                                }
+                                className="text-xl text-zinc-700"
+                              >
+                                ×
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {manualGoalId === goal.id && (
+                      <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#111113] p-4">
+                        <label className="mb-2 block text-xs text-zinc-600">
+                          What do you need to do?
+                        </label>
+
+                        <input
+                          value={manualTitle}
+                          onChange={(e) =>
+                            setManualTitle(e.target.value)
+                          }
+                          placeholder="e.g. Gym"
+                          className="mb-4 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
+                        />
+
+                        <label className="mb-2 block text-xs text-zinc-600">
+                          How often?
+                        </label>
+
+                        <select
+                          value={manualFrequency}
+                          onChange={(e) =>
+                            setManualFrequency(
+                              e.target.value as Frequency
+                            )
+                          }
+                          className="mb-4 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3"
+                        >
+                          <option value="daily">
+                            Daily
+                          </option>
+
+                          <option value="weekly">
+                            Weekly
+                          </option>
+                        </select>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="mb-2 block text-xs text-zinc-600">
+                              How many?
+                            </label>
+
+                            <input
+                              value={manualValue}
+                              onChange={(e) =>
+                                setManualValue(
+                                  e.target.value
+                                )
+                              }
+                              inputMode="decimal"
+                              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-2 block text-xs text-zinc-600">
+                              What?
+                            </label>
+
+                            <input
+                              value={manualUnit}
+                              onChange={(e) =>
+                                setManualUnit(
+                                  e.target.value
+                                )
+                              }
+                              placeholder="sessions"
+                              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() =>
+                            addManualAction(goal.id)
+                          }
+                          disabled={
+                            saving ||
+                            !manualTitle.trim()
+                          }
+                          className="mt-4 w-full rounded-xl bg-violet-500 px-4 py-3 font-medium disabled:opacity-40"
+                        >
+                          Add action
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-5 flex gap-2 border-t border-zinc-900 pt-5">
+                    {goal.status === "active" ? (
+                      <button
+                        onClick={() =>
+                          changeGoalStatus(
+                            goal.id,
+                            "paused"
+                          )
+                        }
+                        className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
+                      >
+                        Pause
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() =>
+                          changeGoalStatus(
+                            goal.id,
+                            "active"
+                          )
+                        }
+                        className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
+                      >
+                        Activate
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() =>
+                        changeGoalStatus(
+                          goal.id,
+                          "completed"
+                        )
+                      }
+                      className="rounded-xl border border-zinc-800 px-4 py-2 text-sm text-zinc-400"
+                    >
+                      Complete
+                    </button>
+
+                    <button
+                      onClick={() =>
+                        changeGoalStatus(
+                          goal.id,
+                          "archived"
+                        )
+                      }
+                      className="ml-auto rounded-xl px-4 py-2 text-sm text-zinc-700"
+                    >
+                      Archive
+                    </button>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}
