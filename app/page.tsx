@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 
@@ -7,20 +8,6 @@ const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
 );
-
-const defaultPriorities = [
-  "Trading session",
-  "Gym",
-  "Record content",
-  "15,000 steps",
-];
-
-type Task = {
-  id: string;
-  title: string;
-  status: string;
-  due_date: string | null;
-};
 
 type CalendarEvent = {
   id: string;
@@ -30,13 +17,44 @@ type CalendarEvent = {
   allDay: boolean;
 };
 
+type Priority = {
+  targetId: string;
+  goalId: string;
+  goalTitle: string;
+  title: string;
+  frequency: "daily" | "weekly";
+  unit: string | null;
+  targetValue: number;
+  completedValue: number;
+  weeklyCompleted?: number;
+  weeklyRemaining?: number;
+  todayTarget: number;
+  remainingToday: number;
+  completed: boolean;
+};
+
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
 function toLocalIso(date: Date) {
-  const pad = (n: number) =>
-    String(n).padStart(2, "0");
+  const pad = (value: number) =>
+    String(value).padStart(2, "0");
 
   const year = date.getFullYear();
   const month = pad(date.getMonth() + 1);
   const day = pad(date.getDate());
+
   const hour = pad(date.getHours());
   const minute = pad(date.getMinutes());
   const second = pad(date.getSeconds());
@@ -47,67 +65,117 @@ function toLocalIso(date: Date) {
   const sign =
     offsetMinutes >= 0 ? "+" : "-";
 
-  const abs = Math.abs(offsetMinutes);
+  const absolute =
+    Math.abs(offsetMinutes);
 
   const offsetHour =
-    pad(Math.floor(abs / 60));
+    pad(
+      Math.floor(
+        absolute / 60
+      )
+    );
 
   const offsetMinute =
-    pad(abs % 60);
+    pad(
+      absolute % 60
+    );
 
   return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${offsetHour}:${offsetMinute}`;
 }
 
 export default function Home() {
-  const [message, setMessage] = useState("");
-  const [reply, setReply] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
-  const [taskError, setTaskError] = useState("");
-
-  const [calendarEvents, setCalendarEvents] =
-    useState<CalendarEvent[]>([]);
-
-  const [calendarLoading, setCalendarLoading] =
-    useState(true);
-
-  const [calendarConnected, setCalendarConnected] =
-    useState(false);
-
-  const [calendarConnecting, setCalendarConnecting] =
-    useState(false);
-
-  const [calendarError, setCalendarError] =
+  const [message, setMessage] =
     useState("");
 
-  const [briefing, setBriefing] = useState("");
-  const [briefingLoading, setBriefingLoading] =
-    useState(true);
-
-  const [briefingError, setBriefingError] =
+  const [reply, setReply] =
     useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [
+    calendarEvents,
+    setCalendarEvents,
+  ] = useState<CalendarEvent[]>([]);
+
+  const [
+    calendarLoading,
+    setCalendarLoading,
+  ] = useState(true);
+
+  const [
+    calendarConnected,
+    setCalendarConnected,
+  ] = useState(false);
+
+  const [
+    calendarConnecting,
+    setCalendarConnecting,
+  ] = useState(false);
+
+  const [
+    calendarError,
+    setCalendarError,
+  ] = useState("");
+
+  const [
+    priorities,
+    setPriorities,
+  ] = useState<Priority[]>([]);
+
+  const [
+    prioritiesLoading,
+    setPrioritiesLoading,
+  ] = useState(true);
+
+  const [
+    priorityError,
+    setPriorityError,
+  ] = useState("");
+
+  const [
+    briefing,
+    setBriefing,
+  ] = useState("");
+
+  const [
+    briefingLoading,
+    setBriefingLoading,
+  ] = useState(true);
+
+  const [
+    briefingError,
+    setBriefingError,
+  ] = useState("");
 
   const timeZone = useMemo(() => {
     try {
-      return Intl.DateTimeFormat()
-        .resolvedOptions()
-        .timeZone || "UTC";
+      return (
+        Intl.DateTimeFormat()
+          .resolvedOptions()
+          .timeZone || "UTC"
+      );
     } catch {
       return "UTC";
     }
   }, []);
 
+  const today =
+    localDateString();
+
   useEffect(() => {
-    loadTodaysPriorities();
     loadCalendar();
+    loadPriorities();
 
-    const params = new URLSearchParams(
-      window.location.search
-    );
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
 
-    if (params.get("calendar") === "connected") {
+    if (
+      params.get("calendar") ===
+      "connected"
+    ) {
       window.history.replaceState(
         {},
         "",
@@ -119,35 +187,188 @@ export default function Home() {
   useEffect(() => {
     if (
       !calendarLoading &&
-      !tasksLoading &&
+      !prioritiesLoading &&
       calendarConnected
     ) {
       generateBriefing(
         calendarEvents,
-        tasks
+        priorities
       );
     }
   }, [
     calendarLoading,
-    tasksLoading,
+    prioritiesLoading,
     calendarConnected,
     calendarEvents,
-    tasks,
+    priorities,
   ]);
 
-  function getTodayRange(days = 1) {
+  function getDateRange(
+    days: number
+  ) {
     const start = new Date();
-    start.setHours(0, 0, 0, 0);
 
-    const end = new Date(start);
+    start.setHours(
+      0,
+      0,
+      0,
+      0
+    );
+
+    const end =
+      new Date(start);
+
     end.setDate(
       end.getDate() + days
     );
 
     return {
-      timeMin: toLocalIso(start),
-      timeMax: toLocalIso(end),
+      timeMin:
+        toLocalIso(start),
+
+      timeMax:
+        toLocalIso(end),
     };
+  }
+
+  async function loadPriorities() {
+    setPrioritiesLoading(true);
+    setPriorityError("");
+
+    try {
+      const response =
+        await fetch(
+          "/api/priorities/today",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify({
+                localDate:
+                  localDateString(),
+                timeZone,
+              }),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        setPriorityError(
+          data.error ||
+            "Could not load today's priorities."
+        );
+
+        return;
+      }
+
+      setPriorities(
+        data.priorities || []
+      );
+    } catch (error) {
+      console.error(
+        "Priority loading error:",
+        error
+      );
+
+      setPriorityError(
+        "Could not load today's priorities."
+      );
+    } finally {
+      setPrioritiesLoading(
+        false
+      );
+    }
+  }
+
+  async function togglePriority(
+    priority: Priority
+  ) {
+    setPriorityError("");
+
+    try {
+      const {
+        data: { user },
+      } =
+        await supabase.auth.getUser();
+
+      if (!user) {
+        setPriorityError(
+          "Could not load your account."
+        );
+
+        return;
+      }
+
+      const newValue =
+        priority.completed
+          ? 0
+          : priority.todayTarget;
+
+      const completed =
+        newValue >=
+        priority.todayTarget;
+
+      const { error } =
+        await supabase
+          .from(
+            "goal_progress"
+          )
+          .upsert(
+            {
+              target_id:
+                priority.targetId,
+
+              goal_id:
+                priority.goalId,
+
+              user_id:
+                user.id,
+
+              progress_date:
+                today,
+
+              value:
+                newValue,
+
+              completed,
+
+              updated_at:
+                new Date().toISOString(),
+            },
+            {
+              onConflict:
+                "target_id,progress_date",
+            }
+          );
+
+      if (error) {
+        console.error(
+          "Progress update error:",
+          error
+        );
+
+        setPriorityError(
+          "Could not update that priority."
+        );
+
+        return;
+      }
+
+      await loadPriorities();
+    } catch (error) {
+      console.error(error);
+
+      setPriorityError(
+        "Could not update that priority."
+      );
+    }
   }
 
   async function loadCalendar() {
@@ -158,7 +379,7 @@ export default function Home() {
       const {
         timeMin,
         timeMax,
-      } = getTodayRange(1);
+      } = getDateRange(1);
 
       const params =
         new URLSearchParams({
@@ -172,7 +393,8 @@ export default function Home() {
         await fetch(
           `/api/calendar?${params.toString()}`,
           {
-            cache: "no-store",
+            cache:
+              "no-store",
           }
         );
 
@@ -183,11 +405,15 @@ export default function Home() {
         !response.ok ||
         !data.connected
       ) {
-        setCalendarConnected(false);
+        setCalendarConnected(
+          false
+        );
+
         setCalendarEvents([]);
 
         if (
-          response.status !== 401
+          response.status !==
+          401
         ) {
           setCalendarError(
             data.error ||
@@ -198,7 +424,10 @@ export default function Home() {
         return;
       }
 
-      setCalendarConnected(true);
+      setCalendarConnected(
+        true
+      );
+
       setCalendarEvents(
         data.events || []
       );
@@ -208,19 +437,23 @@ export default function Home() {
         error
       );
 
-      setCalendarConnected(false);
+      setCalendarConnected(
+        false
+      );
 
       setCalendarError(
         "Could not load Google Calendar."
       );
     } finally {
-      setCalendarLoading(false);
+      setCalendarLoading(
+        false
+      );
     }
   }
 
   async function generateBriefing(
     events: CalendarEvent[],
-    currentTasks: Task[]
+    currentPriorities: Priority[]
   ) {
     setBriefingLoading(true);
     setBriefingError("");
@@ -237,11 +470,27 @@ export default function Home() {
                 "application/json",
             },
 
-            body: JSON.stringify({
-              events,
-              tasks: currentTasks,
-              timeZone,
-            }),
+            body:
+              JSON.stringify({
+                events,
+
+                tasks:
+                  currentPriorities.map(
+                    (
+                      priority
+                    ) => ({
+                      title:
+                        priority.title,
+
+                      status:
+                        priority.completed
+                          ? "completed"
+                          : "pending",
+                    })
+                  ),
+
+                timeZone,
+              }),
           }
         );
 
@@ -271,12 +520,16 @@ export default function Home() {
         "Could not generate today's briefing."
       );
     } finally {
-      setBriefingLoading(false);
+      setBriefingLoading(
+        false
+      );
     }
   }
 
   async function connectGoogleCalendar() {
-    setCalendarConnecting(true);
+    setCalendarConnecting(
+      true
+    );
 
     const redirectTo =
       `${window.location.origin}/auth/callback`;
@@ -292,8 +545,11 @@ export default function Home() {
             "openid email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events.readonly",
 
           queryParams: {
-            access_type: "offline",
-            prompt: "consent",
+            access_type:
+              "offline",
+
+            prompt:
+              "consent",
           },
         },
       });
@@ -308,264 +564,14 @@ export default function Home() {
         "I couldn't start the Google Calendar connection."
       );
 
-      setCalendarConnecting(false);
-    }
-  }
-
-  async function loadTodaysPriorities() {
-    setTasksLoading(true);
-    setTaskError("");
-
-    try {
-      const {
-        data: { user },
-        error: userError,
-      } =
-        await supabase.auth.getUser();
-
-      if (
-        userError ||
-        !user
-      ) {
-        setTaskError(
-          "Could not load your account."
-        );
-        return;
-      }
-
-      const startOfDay =
-        new Date();
-
-      startOfDay.setHours(
-        0,
-        0,
-        0,
-        0
-      );
-
-      const endOfDay =
-        new Date(startOfDay);
-
-      endOfDay.setDate(
-        endOfDay.getDate() + 1
-      );
-
-      const {
-        data: existingTasks,
-        error: fetchError,
-      } =
-        await supabase
-          .from("tasks")
-          .select(
-            "id, title, status, due_date"
-          )
-          .eq(
-            "user_id",
-            user.id
-          )
-          .gte(
-            "due_date",
-            startOfDay.toISOString()
-          )
-          .lt(
-            "due_date",
-            endOfDay.toISOString()
-          )
-          .in(
-            "title",
-            defaultPriorities
-          );
-
-      if (fetchError) {
-        console.error(
-          fetchError
-        );
-
-        setTaskError(
-          "Could not load today's priorities."
-        );
-
-        return;
-      }
-
-      const existingTitles =
-        new Set(
-          (
-            existingTasks || []
-          ).map(
-            (task) =>
-              task.title
-          )
-        );
-
-      const missingTitles =
-        defaultPriorities.filter(
-          (title) =>
-            !existingTitles.has(
-              title
-            )
-        );
-
-      let createdTasks: Task[] =
-        [];
-
-      if (
-        missingTitles.length > 0
-      ) {
-        const newTasks =
-          missingTitles.map(
-            (title) => ({
-              user_id:
-                user.id,
-              title,
-              status:
-                "pending",
-              priority:
-                "normal",
-              due_date:
-                new Date().toISOString(),
-              can_be_scheduled:
-                true,
-              estimated_minutes:
-                30,
-              description:
-                null,
-            })
-          );
-
-        const {
-          data,
-          error:
-            insertError,
-        } =
-          await supabase
-            .from("tasks")
-            .insert(
-              newTasks
-            )
-            .select(
-              "id, title, status, due_date"
-            );
-
-        if (insertError) {
-          console.error(
-            insertError
-          );
-
-          setTaskError(
-            "Could not create today's priorities."
-          );
-
-          return;
-        }
-
-        createdTasks =
-          data || [];
-      }
-
-      const allTasks = [
-        ...(existingTasks ||
-          []),
-        ...createdTasks,
-      ];
-
-      const orderedTasks =
-        defaultPriorities
-          .map((title) =>
-            allTasks.find(
-              (task) =>
-                task.title ===
-                title
-            )
-          )
-          .filter(
-            Boolean
-          ) as Task[];
-
-      setTasks(
-        orderedTasks
-      );
-    } catch (error) {
-      console.error(
-        error
-      );
-
-      setTaskError(
-        "Something went wrong loading priorities."
-      );
-    } finally {
-      setTasksLoading(
+      setCalendarConnecting(
         false
       );
     }
   }
 
-  async function togglePriority(
-    task: Task
-  ) {
-    const newStatus =
-      task.status ===
-      "completed"
-        ? "pending"
-        : "completed";
-
-    setTasks(
-      (current) =>
-        current.map(
-          (item) =>
-            item.id ===
-            task.id
-              ? {
-                  ...item,
-                  status:
-                    newStatus,
-                }
-              : item
-        )
-    );
-
-    const { error } =
-      await supabase
-        .from("tasks")
-        .update({
-          status:
-            newStatus,
-        })
-        .eq(
-          "id",
-          task.id
-        );
-
-    if (error) {
-      console.error(
-        error
-      );
-
-      setTasks(
-        (current) =>
-          current.map(
-            (item) =>
-              item.id ===
-              task.id
-                ? {
-                    ...item,
-                    status:
-                      task.status,
-                  }
-                : item
-          )
-      );
-
-      setTaskError(
-        "Could not update that priority."
-      );
-    }
-  }
-
   async function askAssistant() {
-    if (
-      !message.trim()
-    ) {
+    if (!message.trim()) {
       return;
     }
 
@@ -576,8 +582,7 @@ export default function Home() {
       const {
         timeMin,
         timeMax,
-      } =
-        getTodayRange(7);
+      } = getDateRange(7);
 
       const response =
         await fetch(
@@ -620,15 +625,11 @@ export default function Home() {
   function formatEventTime(
     event: CalendarEvent
   ) {
-    if (
-      event.allDay
-    ) {
+    if (event.allDay) {
       return "All day";
     }
 
-    if (
-      !event.start
-    ) {
+    if (!event.start) {
       return "";
     }
 
@@ -637,8 +638,10 @@ export default function Home() {
       {
         hour:
           "numeric",
+
         minute:
           "2-digit",
+
         timeZone,
       }
     ).format(
@@ -648,23 +651,86 @@ export default function Home() {
     );
   }
 
+  function priorityDetail(
+    priority: Priority
+  ) {
+    if (
+      priority.frequency ===
+      "daily"
+    ) {
+      if (
+        priority.targetValue ===
+          1 &&
+        priority.unit ===
+          "completion"
+      ) {
+        return "Today";
+      }
+
+      return `${priority.todayTarget} ${
+        priority.unit || ""
+      } today`;
+    }
+
+    return `${priority.todayTarget} ${
+      priority.unit || ""
+    } today · ${
+      priority.weeklyCompleted ||
+      0
+    }/${priority.targetValue} this week`;
+  }
+
   return (
     <main className="min-h-screen bg-[#0b0b0d] text-white">
       <div className="mx-auto min-h-screen max-w-md px-5 pb-40 pt-16">
 
-        <header className="mb-10">
-          <p className="mb-2 text-sm text-violet-400">
-            AMBITIOUS
-          </p>
+        <header className="mb-8">
+          <div className="flex items-start justify-between gap-5">
+            <div>
+              <p className="mb-2 text-sm text-violet-400">
+                AMBITIOUS
+              </p>
 
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Good morning, Hari.
-          </h1>
+              <h1 className="text-3xl font-semibold tracking-tight">
+                Good morning,
+                Hari.
+              </h1>
 
-          <p className="mt-2 text-zinc-400">
-            Here&apos;s what your day looks like.
-          </p>
+              <p className="mt-2 text-zinc-400">
+                Here&apos;s what your
+                day looks like.
+              </p>
+            </div>
+
+            <Link
+              href="/goals"
+              className="mt-1 shrink-0 rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-violet-400"
+            >
+              Goals
+            </Link>
+          </div>
         </header>
+
+        <Link
+          href="/goals"
+          className="mb-8 flex items-center justify-between rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5"
+        >
+          <div>
+            <p className="text-sm text-violet-400">
+              GOALS & SYSTEMS
+            </p>
+
+            <p className="mt-1 text-sm text-zinc-500">
+              Manage what
+              Ambitious is helping
+              you achieve
+            </p>
+          </div>
+
+          <span className="text-xl text-zinc-600">
+            ›
+          </span>
+        </Link>
 
         <section className="mb-8">
           {calendarConnected ? (
@@ -675,7 +741,8 @@ export default function Home() {
                 </p>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  Your schedule is live
+                  Your schedule
+                  is live
                 </p>
               </div>
 
@@ -692,7 +759,7 @@ export default function Home() {
               disabled={
                 calendarConnecting
               }
-              className="flex w-full items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-4 text-left transition active:scale-[0.99] disabled:opacity-50"
+              className="flex w-full items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-4 text-left"
             >
               <div>
                 <p className="font-medium">
@@ -700,7 +767,8 @@ export default function Home() {
                 </p>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  Connect your real schedule
+                  Connect your real
+                  schedule
                 </p>
               </div>
 
@@ -725,6 +793,7 @@ export default function Home() {
                 {
                   weekday:
                     "long",
+
                   timeZone,
                 }
               ).format(
@@ -735,7 +804,8 @@ export default function Home() {
 
           {calendarLoading && (
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
-              Loading your calendar...
+              Loading your
+              calendar...
             </div>
           )}
 
@@ -763,7 +833,8 @@ export default function Home() {
             calendarEvents.length ===
               0 && (
               <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
-                Nothing scheduled today.
+                Nothing scheduled
+                today.
               </div>
             )}
 
@@ -802,7 +873,7 @@ export default function Home() {
                   onClick={() =>
                     generateBriefing(
                       calendarEvents,
-                      tasks
+                      priorities
                     )
                   }
                   className="text-xs text-zinc-600"
@@ -815,36 +886,15 @@ export default function Home() {
           {briefingLoading &&
             calendarConnected && (
               <p className="leading-7 text-zinc-500">
-                Analysing your day...
-              </p>
-            )}
-
-          {!calendarConnected &&
-            !calendarLoading && (
-              <p className="leading-7 text-zinc-400">
-                Connect Google Calendar to
-                generate your daily briefing.
+                Analysing your
+                day...
               </p>
             )}
 
           {briefingError && (
-            <div>
-              <p className="leading-7 text-zinc-400">
-                {briefingError}
-              </p>
-
-              <button
-                onClick={() =>
-                  generateBriefing(
-                    calendarEvents,
-                    tasks
-                  )
-                }
-                className="mt-3 text-sm text-violet-400"
-              >
-                Try again
-              </button>
-            </div>
+            <p className="leading-7 text-zinc-400">
+              {briefingError}
+            </p>
           )}
 
           {!briefingLoading &&
@@ -858,55 +908,82 @@ export default function Home() {
 
         <section className="mb-10">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-zinc-400">
-              TODAY&apos;S PRIORITIES
-            </h2>
+            <div>
+              <h2 className="text-sm font-medium text-zinc-400">
+                TODAY&apos;S
+                PRIORITIES
+              </h2>
 
-            {tasks.length >
+              <p className="mt-1 text-xs text-zinc-700">
+                Generated from
+                your active goals
+              </p>
+            </div>
+
+            {priorities.length >
               0 && (
               <span className="text-xs text-zinc-600">
                 {
-                  tasks.filter(
-                    (task) =>
-                      task.status ===
-                      "completed"
+                  priorities.filter(
+                    (
+                      priority
+                    ) =>
+                      priority.completed
                   ).length
                 }
-                /{tasks.length} done
+                /{priorities.length} done
               </span>
             )}
           </div>
 
-          {tasksLoading && (
+          {prioritiesLoading ? (
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
-              Loading priorities...
+              Building today&apos;s
+              priorities...
             </div>
-          )}
-
-          {taskError && (
-            <div className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm text-zinc-400">
-              {taskError}
+          ) : priorityError ? (
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-400">
+              {priorityError}
             </div>
-          )}
+          ) : priorities.length ===
+            0 ? (
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+              <p className="text-zinc-300">
+                Nothing required
+                from your goals
+                today.
+              </p>
 
-          {!tasksLoading && (
+              <Link
+                href="/goals"
+                className="mt-3 inline-block text-sm text-violet-400"
+              >
+                Manage goals →
+              </Link>
+            </div>
+          ) : (
             <div className="space-y-3">
-              {tasks.map(
-                (task) => (
-                  <Priority
+              {priorities.map(
+                (priority) => (
+                  <PriorityCard
                     key={
-                      task.id
+                      priority.targetId
                     }
                     title={
-                      task.title
+                      priority.title
                     }
+                    goal={
+                      priority.goalTitle
+                    }
+                    detail={priorityDetail(
+                      priority
+                    )}
                     completed={
-                      task.status ===
-                      "completed"
+                      priority.completed
                     }
                     onToggle={() =>
                       togglePriority(
-                        task
+                        priority
                       )
                     }
                   />
@@ -924,8 +1001,7 @@ export default function Home() {
               onClick={() =>
                 setReply("")
               }
-              aria-label="Dismiss response"
-              className="absolute right-4 top-3 text-2xl text-zinc-500 transition hover:text-white"
+              className="absolute right-4 top-3 text-2xl text-zinc-500"
             >
               ×
             </button>
@@ -946,13 +1022,14 @@ export default function Home() {
             }
             onKeyDown={(e) => {
               if (
-                e.key === "Enter"
+                e.key ===
+                "Enter"
               ) {
                 askAssistant();
               }
             }}
             placeholder="Ask Ambitious anything..."
-            className="min-w-0 flex-1 bg-transparent px-3 py-2 text-black outline-none placeholder:text-zinc-500"
+            className="min-w-0 flex-1 bg-transparent px-3 py-2 text-black outline-none"
           />
 
           <button
@@ -962,7 +1039,7 @@ export default function Home() {
             disabled={
               loading
             }
-            className="rounded-2xl bg-black px-5 py-3 font-medium text-white disabled:opacity-50"
+            className="rounded-2xl bg-black px-5 py-3 font-medium text-white"
           >
             {loading
               ? "..."
@@ -996,45 +1073,57 @@ function Event({
   );
 }
 
-function Priority({
+function PriorityCard({
   title,
+  goal,
+  detail,
   completed,
   onToggle,
 }: {
   title: string;
+  goal: string;
+  detail: string;
   completed: boolean;
   onToggle: () => void;
 }) {
   return (
     <button
-      onClick={
-        onToggle
-      }
-      className="flex w-full items-center gap-4 rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-left transition active:scale-[0.99]"
+      onClick={onToggle}
+      className="flex w-full items-center gap-4 rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-left"
     >
       <div
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
           completed
             ? "border-violet-500 bg-violet-500"
             : "border-zinc-600"
         }`}
       >
         {completed && (
-          <span className="text-sm font-bold text-white">
+          <span className="font-bold">
             ✓
           </span>
         )}
       </div>
 
-      <span
-        className={`transition ${
-          completed
-            ? "text-zinc-600 line-through"
-            : "text-zinc-300"
-        }`}
-      >
-        {title}
-      </span>
+      <div className="min-w-0 flex-1">
+        <p
+          className={
+            completed
+              ? "text-zinc-600 line-through"
+              : "text-zinc-200"
+          }
+        >
+          {title}
+        </p>
+
+        <p className="mt-1 text-xs text-zinc-600">
+          {goal}
+        </p>
+
+        <p className="mt-1 text-sm text-violet-400">
+          {detail}
+        </p>
+      </div>
     </button>
   );
 }
