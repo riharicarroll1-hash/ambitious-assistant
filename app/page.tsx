@@ -22,6 +22,14 @@ type Task = {
   due_date: string | null;
 };
 
+type CalendarEvent = {
+  id: string;
+  title: string;
+  start: string | null;
+  end: string | null;
+  allDay: boolean;
+};
+
 export default function Home() {
   const [message, setMessage] = useState("");
   const [reply, setReply] = useState("");
@@ -31,43 +39,80 @@ export default function Home() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [taskError, setTaskError] = useState("");
 
-  const [calendarConnecting, setCalendarConnecting] =
-    useState(false);
+  const [calendarEvents, setCalendarEvents] = useState<
+    CalendarEvent[]
+  >([]);
+
+  const [calendarLoading, setCalendarLoading] =
+    useState(true);
 
   const [calendarConnected, setCalendarConnected] =
     useState(false);
 
+  const [calendarConnecting, setCalendarConnecting] =
+    useState(false);
+
+  const [calendarError, setCalendarError] =
+    useState("");
+
   useEffect(() => {
     loadTodaysPriorities();
+    loadCalendar();
 
     const params = new URLSearchParams(
       window.location.search
     );
 
     if (params.get("calendar") === "connected") {
-      setCalendarConnected(true);
-
-      localStorage.setItem(
-        "ambitious-google-calendar-connected",
-        "true"
-      );
-
       window.history.replaceState(
         {},
         "",
         window.location.pathname
       );
-    } else {
-      const savedCalendarStatus =
-        localStorage.getItem(
-          "ambitious-google-calendar-connected"
-        );
-
-      if (savedCalendarStatus === "true") {
-        setCalendarConnected(true);
-      }
     }
   }, []);
+
+  async function loadCalendar() {
+    setCalendarLoading(true);
+    setCalendarError("");
+
+    try {
+      const response = await fetch("/api/calendar", {
+        cache: "no-store",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.connected) {
+        setCalendarConnected(false);
+        setCalendarEvents([]);
+
+        if (response.status !== 401) {
+          setCalendarError(
+            data.error ||
+              "Could not load Google Calendar."
+          );
+        }
+
+        return;
+      }
+
+      setCalendarConnected(true);
+      setCalendarEvents(data.events || []);
+    } catch (error) {
+      console.error(
+        "Calendar loading error:",
+        error
+      );
+
+      setCalendarConnected(false);
+      setCalendarError(
+        "Could not load Google Calendar."
+      );
+    } finally {
+      setCalendarLoading(false);
+    }
+  }
 
   async function connectGoogleCalendar() {
     setCalendarConnecting(true);
@@ -127,6 +172,7 @@ export default function Home() {
       startOfDay.setHours(0, 0, 0, 0);
 
       const endOfDay = new Date(startOfDay);
+
       endOfDay.setDate(
         endOfDay.getDate() + 1
       );
@@ -327,6 +373,28 @@ export default function Home() {
     }
   }
 
+  function formatEventTime(
+    event: CalendarEvent
+  ) {
+    if (event.allDay) {
+      return "All day";
+    }
+
+    if (!event.start) {
+      return "";
+    }
+
+    return new Intl.DateTimeFormat(
+      "en-AU",
+      {
+        hour: "numeric",
+        minute: "2-digit",
+      }
+    ).format(
+      new Date(event.start)
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#0b0b0d] text-white">
       <div className="mx-auto min-h-screen max-w-md px-5 pb-40 pt-16">
@@ -354,12 +422,13 @@ export default function Home() {
                 </p>
 
                 <p className="mt-1 text-sm text-zinc-500">
-                  Connected to Ambitious
+                  Your schedule is live
                 </p>
               </div>
 
               <div className="flex items-center gap-2 text-sm text-emerald-400">
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
+
                 Connected
               </div>
             </div>
@@ -404,32 +473,53 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="space-y-3">
-            <Event
-              time="8:30 AM"
-              title="Morning routine"
-            />
+          {calendarLoading && (
+            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
+              Loading your calendar...
+            </div>
+          )}
 
-            <Event
-              time="10:00 AM"
-              title="Trading"
-            />
+          {!calendarLoading &&
+            calendarError && (
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5">
+                <p className="text-zinc-300">
+                  {calendarError}
+                </p>
 
-            <Event
-              time="1:00 PM"
-              title="Gym"
-            />
+                <button
+                  onClick={loadCalendar}
+                  className="mt-3 text-sm text-violet-400"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
 
-            <Event
-              time="3:00 PM"
-              title="Content"
-            />
+          {!calendarLoading &&
+            calendarConnected &&
+            !calendarError &&
+            calendarEvents.length === 0 && (
+              <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
+                Nothing scheduled today.
+              </div>
+            )}
 
-            <Event
-              time="5:00 PM"
-              title="Family time"
-            />
-          </div>
+          {!calendarLoading &&
+            calendarEvents.length > 0 && (
+              <div className="space-y-3">
+                {calendarEvents.map(
+                  (event) => (
+                    <Event
+                      key={event.id}
+                      time={formatEventTime(
+                        event
+                      )}
+                      title={event.title}
+                    />
+                  )
+                )}
+              </div>
+            )}
         </section>
 
         <section className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
@@ -438,10 +528,11 @@ export default function Home() {
           </p>
 
           <p className="leading-7 text-zinc-300">
-            Your morning is structured well.
-            You have a gap after trading
-            that could be used for FX Replay
-            before the gym.
+            Your calendar is now connected.
+            Next, Ambitious will use your
+            real schedule, priorities and
+            memories to help organise your
+            day.
           </p>
         </section>
 
@@ -526,9 +617,7 @@ export default function Home() {
               )
             }
             onKeyDown={(e) => {
-              if (
-                e.key === "Enter"
-              ) {
+              if (e.key === "Enter") {
                 askAssistant();
               }
             }}
@@ -541,9 +630,7 @@ export default function Home() {
             disabled={loading}
             className="rounded-2xl bg-black px-5 py-3 font-medium text-white disabled:opacity-50"
           >
-            {loading
-              ? "..."
-              : "Ask"}
+            {loading ? "..." : "Ask"}
           </button>
         </div>
       </div>
@@ -560,11 +647,11 @@ function Event({
 }) {
   return (
     <div className="flex items-center rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5">
-      <div className="w-24 text-sm text-zinc-500">
+      <div className="w-24 shrink-0 text-sm text-zinc-500">
         {time}
       </div>
 
-      <div className="h-8 w-[2px] rounded-full bg-violet-500" />
+      <div className="h-8 w-[2px] shrink-0 rounded-full bg-violet-500" />
 
       <div className="ml-4 font-medium">
         {title}
