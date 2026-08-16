@@ -33,6 +33,7 @@ export default function Home() {
 
   const [calendarConnecting, setCalendarConnecting] =
     useState(false);
+
   const [calendarConnected, setCalendarConnected] =
     useState(false);
 
@@ -45,6 +46,7 @@ export default function Home() {
 
     if (params.get("calendar") === "connected") {
       setCalendarConnected(true);
+
       localStorage.setItem(
         "ambitious-google-calendar-connected",
         "true"
@@ -81,8 +83,8 @@ export default function Home() {
           redirectTo,
 
           scopes:
-  "openid email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events.readonly",,
-          
+            "openid email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events.readonly",
+
           queryParams: {
             access_type: "offline",
             prompt: "consent",
@@ -124,9 +126,7 @@ export default function Home() {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
-      const endOfDay =
-        new Date(startOfDay);
-
+      const endOfDay = new Date(startOfDay);
       endOfDay.setDate(
         endOfDay.getDate() + 1
       );
@@ -438,10 +438,10 @@ export default function Home() {
           </p>
 
           <p className="leading-7 text-zinc-300">
-            Your morning is structured
-            well. You have a gap after
-            trading that could be used
-            for FX Replay before the gym.
+            Your morning is structured well.
+            You have a gap after trading
+            that could be used for FX Replay
+            before the gym.
           </p>
         </section>
 
