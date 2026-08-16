@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createBrowserClient } from "@supabase/ssr";
 
 const supabase = createBrowserClient(
@@ -30,6 +30,34 @@ type CalendarEvent = {
   allDay: boolean;
 };
 
+function toLocalIso(date: Date) {
+  const pad = (n: number) =>
+    String(n).padStart(2, "0");
+
+  const year = date.getFullYear();
+  const month = pad(date.getMonth() + 1);
+  const day = pad(date.getDate());
+  const hour = pad(date.getHours());
+  const minute = pad(date.getMinutes());
+  const second = pad(date.getSeconds());
+
+  const offsetMinutes =
+    -date.getTimezoneOffset();
+
+  const sign =
+    offsetMinutes >= 0 ? "+" : "-";
+
+  const abs = Math.abs(offsetMinutes);
+
+  const offsetHour =
+    pad(Math.floor(abs / 60));
+
+  const offsetMinute =
+    pad(abs % 60);
+
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}${sign}${offsetHour}:${offsetMinute}`;
+}
+
 export default function Home() {
   const [message, setMessage] = useState("");
   const [reply, setReply] = useState("");
@@ -57,8 +85,19 @@ export default function Home() {
   const [briefing, setBriefing] = useState("");
   const [briefingLoading, setBriefingLoading] =
     useState(true);
+
   const [briefingError, setBriefingError] =
     useState("");
+
+  const timeZone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat()
+        .resolvedOptions()
+        .timeZone || "UTC";
+    } catch {
+      return "UTC";
+    }
+  }, []);
 
   useEffect(() => {
     loadTodaysPriorities();
@@ -83,7 +122,10 @@ export default function Home() {
       !tasksLoading &&
       calendarConnected
     ) {
-      generateBriefing(calendarEvents, tasks);
+      generateBriefing(
+        calendarEvents,
+        tasks
+      );
     }
   }, [
     calendarLoading,
@@ -93,22 +135,60 @@ export default function Home() {
     tasks,
   ]);
 
+  function getTodayRange(days = 1) {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(start);
+    end.setDate(
+      end.getDate() + days
+    );
+
+    return {
+      timeMin: toLocalIso(start),
+      timeMax: toLocalIso(end),
+    };
+  }
+
   async function loadCalendar() {
     setCalendarLoading(true);
     setCalendarError("");
 
     try {
-      const response = await fetch("/api/calendar", {
-        cache: "no-store",
-      });
+      const {
+        timeMin,
+        timeMax,
+      } = getTodayRange(1);
 
-      const data = await response.json();
+      const params =
+        new URLSearchParams({
+          days: "1",
+          timeZone,
+          timeMin,
+          timeMax,
+        });
 
-      if (!response.ok || !data.connected) {
+      const response =
+        await fetch(
+          `/api/calendar?${params.toString()}`,
+          {
+            cache: "no-store",
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok ||
+        !data.connected
+      ) {
         setCalendarConnected(false);
         setCalendarEvents([]);
 
-        if (response.status !== 401) {
+        if (
+          response.status !== 401
+        ) {
           setCalendarError(
             data.error ||
               "Could not load Google Calendar."
@@ -119,7 +199,9 @@ export default function Home() {
       }
 
       setCalendarConnected(true);
-      setCalendarEvents(data.events || []);
+      setCalendarEvents(
+        data.events || []
+      );
     } catch (error) {
       console.error(
         "Calendar loading error:",
@@ -144,24 +226,27 @@ export default function Home() {
     setBriefingError("");
 
     try {
-      const response = await fetch(
-        "/api/briefing",
-        {
-          method: "POST",
+      const response =
+        await fetch(
+          "/api/briefing",
+          {
+            method: "POST",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-          body: JSON.stringify({
-            events,
-            tasks: currentTasks,
-          }),
-        }
-      );
+            body: JSON.stringify({
+              events,
+              tasks: currentTasks,
+              timeZone,
+            }),
+          }
+        );
 
-      const data = await response.json();
+      const data =
+        await response.json();
 
       if (!response.ok) {
         setBriefingError(
@@ -235,19 +320,31 @@ export default function Home() {
       const {
         data: { user },
         error: userError,
-      } = await supabase.auth.getUser();
+      } =
+        await supabase.auth.getUser();
 
-      if (userError || !user) {
+      if (
+        userError ||
+        !user
+      ) {
         setTaskError(
           "Could not load your account."
         );
         return;
       }
 
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
+      const startOfDay =
+        new Date();
 
-      const endOfDay = new Date(startOfDay);
+      startOfDay.setHours(
+        0,
+        0,
+        0,
+        0
+      );
+
+      const endOfDay =
+        new Date(startOfDay);
 
       endOfDay.setDate(
         endOfDay.getDate() + 1
@@ -256,27 +353,33 @@ export default function Home() {
       const {
         data: existingTasks,
         error: fetchError,
-      } = await supabase
-        .from("tasks")
-        .select(
-          "id, title, status, due_date"
-        )
-        .eq("user_id", user.id)
-        .gte(
-          "due_date",
-          startOfDay.toISOString()
-        )
-        .lt(
-          "due_date",
-          endOfDay.toISOString()
-        )
-        .in(
-          "title",
-          defaultPriorities
-        );
+      } =
+        await supabase
+          .from("tasks")
+          .select(
+            "id, title, status, due_date"
+          )
+          .eq(
+            "user_id",
+            user.id
+          )
+          .gte(
+            "due_date",
+            startOfDay.toISOString()
+          )
+          .lt(
+            "due_date",
+            endOfDay.toISOString()
+          )
+          .in(
+            "title",
+            defaultPriorities
+          );
 
       if (fetchError) {
-        console.error(fetchError);
+        console.error(
+          fetchError
+        );
 
         setTaskError(
           "Could not load today's priorities."
@@ -287,45 +390,67 @@ export default function Home() {
 
       const existingTitles =
         new Set(
-          (existingTasks || []).map(
-            (task) => task.title
+          (
+            existingTasks || []
+          ).map(
+            (task) =>
+              task.title
           )
         );
 
       const missingTitles =
         defaultPriorities.filter(
           (title) =>
-            !existingTitles.has(title)
+            !existingTitles.has(
+              title
+            )
         );
 
-      let createdTasks: Task[] = [];
+      let createdTasks: Task[] =
+        [];
 
-      if (missingTitles.length > 0) {
+      if (
+        missingTitles.length > 0
+      ) {
         const newTasks =
-          missingTitles.map((title) => ({
-            user_id: user.id,
-            title,
-            status: "pending",
-            priority: "normal",
-            due_date:
-              new Date().toISOString(),
-            can_be_scheduled: true,
-            estimated_minutes: 30,
-            description: null,
-          }));
+          missingTitles.map(
+            (title) => ({
+              user_id:
+                user.id,
+              title,
+              status:
+                "pending",
+              priority:
+                "normal",
+              due_date:
+                new Date().toISOString(),
+              can_be_scheduled:
+                true,
+              estimated_minutes:
+                30,
+              description:
+                null,
+            })
+          );
 
         const {
           data,
-          error: insertError,
-        } = await supabase
-          .from("tasks")
-          .insert(newTasks)
-          .select(
-            "id, title, status, due_date"
-          );
+          error:
+            insertError,
+        } =
+          await supabase
+            .from("tasks")
+            .insert(
+              newTasks
+            )
+            .select(
+              "id, title, status, due_date"
+            );
 
         if (insertError) {
-          console.error(insertError);
+          console.error(
+            insertError
+          );
 
           setTaskError(
             "Could not create today's priorities."
@@ -334,11 +459,13 @@ export default function Home() {
           return;
         }
 
-        createdTasks = data || [];
+        createdTasks =
+          data || [];
       }
 
       const allTasks = [
-        ...(existingTasks || []),
+        ...(existingTasks ||
+          []),
         ...createdTasks,
       ];
 
@@ -347,20 +474,29 @@ export default function Home() {
           .map((title) =>
             allTasks.find(
               (task) =>
-                task.title === title
+                task.title ===
+                title
             )
           )
-          .filter(Boolean) as Task[];
+          .filter(
+            Boolean
+          ) as Task[];
 
-      setTasks(orderedTasks);
+      setTasks(
+        orderedTasks
+      );
     } catch (error) {
-      console.error(error);
+      console.error(
+        error
+      );
 
       setTaskError(
         "Something went wrong loading priorities."
       );
     } finally {
-      setTasksLoading(false);
+      setTasksLoading(
+        false
+      );
     }
   }
 
@@ -368,41 +504,56 @@ export default function Home() {
     task: Task
   ) {
     const newStatus =
-      task.status === "completed"
+      task.status ===
+      "completed"
         ? "pending"
         : "completed";
 
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === task.id
-          ? {
-              ...item,
-              status: newStatus,
-            }
-          : item
-      )
+    setTasks(
+      (current) =>
+        current.map(
+          (item) =>
+            item.id ===
+            task.id
+              ? {
+                  ...item,
+                  status:
+                    newStatus,
+                }
+              : item
+        )
     );
 
     const { error } =
       await supabase
         .from("tasks")
         .update({
-          status: newStatus,
+          status:
+            newStatus,
         })
-        .eq("id", task.id);
+        .eq(
+          "id",
+          task.id
+        );
 
     if (error) {
-      console.error(error);
+      console.error(
+        error
+      );
 
-      setTasks((current) =>
-        current.map((item) =>
-          item.id === task.id
-            ? {
-                ...item,
-                status: task.status,
-              }
-            : item
-        )
+      setTasks(
+        (current) =>
+          current.map(
+            (item) =>
+              item.id ===
+              task.id
+                ? {
+                    ...item,
+                    status:
+                      task.status,
+                  }
+                : item
+          )
       );
 
       setTaskError(
@@ -412,25 +563,42 @@ export default function Home() {
   }
 
   async function askAssistant() {
-    if (!message.trim()) return;
+    if (
+      !message.trim()
+    ) {
+      return;
+    }
 
     setLoading(true);
     setReply("");
 
     try {
+      const {
+        timeMin,
+        timeMax,
+      } =
+        getTodayRange(7);
+
       const response =
-        await fetch("/api/chat", {
-          method: "POST",
+        await fetch(
+          "/api/chat",
+          {
+            method: "POST",
 
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
 
-          body: JSON.stringify({
-            message,
-          }),
-        });
+            body:
+              JSON.stringify({
+                message,
+                timeZone,
+                timeMin,
+                timeMax,
+              }),
+          }
+        );
 
       const data =
         await response.json();
@@ -452,22 +620,31 @@ export default function Home() {
   function formatEventTime(
     event: CalendarEvent
   ) {
-    if (event.allDay) {
+    if (
+      event.allDay
+    ) {
       return "All day";
     }
 
-    if (!event.start) {
+    if (
+      !event.start
+    ) {
       return "";
     }
 
     return new Intl.DateTimeFormat(
       "en-AU",
       {
-        hour: "numeric",
-        minute: "2-digit",
+        hour:
+          "numeric",
+        minute:
+          "2-digit",
+        timeZone,
       }
     ).format(
-      new Date(event.start)
+      new Date(
+        event.start
+      )
     );
   }
 
@@ -509,8 +686,12 @@ export default function Home() {
             </div>
           ) : (
             <button
-              onClick={connectGoogleCalendar}
-              disabled={calendarConnecting}
+              onClick={
+                connectGoogleCalendar
+              }
+              disabled={
+                calendarConnecting
+              }
               className="flex w-full items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-4 text-left transition active:scale-[0.99] disabled:opacity-50"
             >
               <div>
@@ -542,9 +723,13 @@ export default function Home() {
               {new Intl.DateTimeFormat(
                 "en-AU",
                 {
-                  weekday: "long",
+                  weekday:
+                    "long",
+                  timeZone,
                 }
-              ).format(new Date())}
+              ).format(
+                new Date()
+              )}
             </span>
           </div>
 
@@ -562,7 +747,9 @@ export default function Home() {
                 </p>
 
                 <button
-                  onClick={loadCalendar}
+                  onClick={
+                    loadCalendar
+                  }
                   className="mt-3 text-sm text-violet-400"
                 >
                   Try again
@@ -573,23 +760,29 @@ export default function Home() {
           {!calendarLoading &&
             calendarConnected &&
             !calendarError &&
-            calendarEvents.length === 0 && (
+            calendarEvents.length ===
+              0 && (
               <div className="rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-zinc-500">
                 Nothing scheduled today.
               </div>
             )}
 
           {!calendarLoading &&
-            calendarEvents.length > 0 && (
+            calendarEvents.length >
+              0 && (
               <div className="space-y-3">
                 {calendarEvents.map(
                   (event) => (
                     <Event
-                      key={event.id}
+                      key={
+                        event.id
+                      }
                       time={formatEventTime(
                         event
                       )}
-                      title={event.title}
+                      title={
+                        event.title
+                      }
                     />
                   )
                 )}
@@ -669,7 +862,8 @@ export default function Home() {
               TODAY&apos;S PRIORITIES
             </h2>
 
-            {tasks.length > 0 && (
+            {tasks.length >
+              0 && (
               <span className="text-xs text-zinc-600">
                 {
                   tasks.filter(
@@ -697,19 +891,27 @@ export default function Home() {
 
           {!tasksLoading && (
             <div className="space-y-3">
-              {tasks.map((task) => (
-                <Priority
-                  key={task.id}
-                  title={task.title}
-                  completed={
-                    task.status ===
-                    "completed"
-                  }
-                  onToggle={() =>
-                    togglePriority(task)
-                  }
-                />
-              ))}
+              {tasks.map(
+                (task) => (
+                  <Priority
+                    key={
+                      task.id
+                    }
+                    title={
+                      task.title
+                    }
+                    completed={
+                      task.status ===
+                      "completed"
+                    }
+                    onToggle={() =>
+                      togglePriority(
+                        task
+                      )
+                    }
+                  />
+                )
+              )}
             </div>
           )}
         </section>
@@ -743,7 +945,9 @@ export default function Home() {
               )
             }
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (
+                e.key === "Enter"
+              ) {
                 askAssistant();
               }
             }}
@@ -752,11 +956,17 @@ export default function Home() {
           />
 
           <button
-            onClick={askAssistant}
-            disabled={loading}
+            onClick={
+              askAssistant
+            }
+            disabled={
+              loading
+            }
             className="rounded-2xl bg-black px-5 py-3 font-medium text-white disabled:opacity-50"
           >
-            {loading ? "..." : "Ask"}
+            {loading
+              ? "..."
+              : "Ask"}
           </button>
         </div>
       </div>
@@ -797,7 +1007,9 @@ function Priority({
 }) {
   return (
     <button
-      onClick={onToggle}
+      onClick={
+        onToggle
+      }
       className="flex w-full items-center gap-4 rounded-3xl border border-zinc-800 bg-zinc-950 px-5 py-5 text-left transition active:scale-[0.99]"
     >
       <div
