@@ -31,9 +31,78 @@ export default function Home() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [taskError, setTaskError] = useState("");
 
+  const [calendarConnecting, setCalendarConnecting] =
+    useState(false);
+  const [calendarConnected, setCalendarConnected] =
+    useState(false);
+
   useEffect(() => {
     loadTodaysPriorities();
+
+    const params = new URLSearchParams(
+      window.location.search
+    );
+
+    if (params.get("calendar") === "connected") {
+      setCalendarConnected(true);
+      localStorage.setItem(
+        "ambitious-google-calendar-connected",
+        "true"
+      );
+
+      window.history.replaceState(
+        {},
+        "",
+        window.location.pathname
+      );
+    } else {
+      const savedCalendarStatus =
+        localStorage.getItem(
+          "ambitious-google-calendar-connected"
+        );
+
+      if (savedCalendarStatus === "true") {
+        setCalendarConnected(true);
+      }
+    }
   }, []);
+
+  async function connectGoogleCalendar() {
+    setCalendarConnecting(true);
+
+    const redirectTo =
+      `${window.location.origin}/auth/callback`;
+
+    const { error } =
+      await supabase.auth.signInWithOAuth({
+        provider: "google",
+
+        options: {
+          redirectTo,
+
+          scopes:
+            "https://www.googleapis.com/auth/calendar.events.readonly",
+
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
+        },
+      });
+
+    if (error) {
+      console.error(
+        "Google Calendar connection error:",
+        error
+      );
+
+      setReply(
+        "I couldn't start the Google Calendar connection."
+      );
+
+      setCalendarConnecting(false);
+    }
+  }
 
   async function loadTodaysPriorities() {
     setTasksLoading(true);
@@ -46,61 +115,100 @@ export default function Home() {
       } = await supabase.auth.getUser();
 
       if (userError || !user) {
-        setTaskError("Could not load your account.");
+        setTaskError(
+          "Could not load your account."
+        );
         return;
       }
 
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
 
-      const endOfDay = new Date(startOfDay);
-      endOfDay.setDate(endOfDay.getDate() + 1);
+      const endOfDay =
+        new Date(startOfDay);
 
-      const { data: existingTasks, error: fetchError } =
-        await supabase
-          .from("tasks")
-          .select("id, title, status, due_date")
-          .eq("user_id", user.id)
-          .gte("due_date", startOfDay.toISOString())
-          .lt("due_date", endOfDay.toISOString())
-          .in("title", defaultPriorities);
+      endOfDay.setDate(
+        endOfDay.getDate() + 1
+      );
+
+      const {
+        data: existingTasks,
+        error: fetchError,
+      } = await supabase
+        .from("tasks")
+        .select(
+          "id, title, status, due_date"
+        )
+        .eq("user_id", user.id)
+        .gte(
+          "due_date",
+          startOfDay.toISOString()
+        )
+        .lt(
+          "due_date",
+          endOfDay.toISOString()
+        )
+        .in(
+          "title",
+          defaultPriorities
+        );
 
       if (fetchError) {
         console.error(fetchError);
-        setTaskError("Could not load today's priorities.");
+
+        setTaskError(
+          "Could not load today's priorities."
+        );
+
         return;
       }
 
-      const existingTitles = new Set(
-        (existingTasks || []).map((task) => task.title)
-      );
+      const existingTitles =
+        new Set(
+          (existingTasks || []).map(
+            (task) => task.title
+          )
+        );
 
-      const missingTitles = defaultPriorities.filter(
-        (title) => !existingTitles.has(title)
-      );
+      const missingTitles =
+        defaultPriorities.filter(
+          (title) =>
+            !existingTitles.has(title)
+        );
 
       let createdTasks: Task[] = [];
 
       if (missingTitles.length > 0) {
-        const newTasks = missingTitles.map((title, index) => ({
-          user_id: user.id,
-          title,
-          status: "pending",
-          priority: "normal",
-          due_date: new Date().toISOString(),
-          can_be_scheduled: true,
-          estimated_minutes: 30,
-          description: null,
-        }));
+        const newTasks =
+          missingTitles.map((title) => ({
+            user_id: user.id,
+            title,
+            status: "pending",
+            priority: "normal",
+            due_date:
+              new Date().toISOString(),
+            can_be_scheduled: true,
+            estimated_minutes: 30,
+            description: null,
+          }));
 
-        const { data, error: insertError } = await supabase
+        const {
+          data,
+          error: insertError,
+        } = await supabase
           .from("tasks")
           .insert(newTasks)
-          .select("id, title, status, due_date");
+          .select(
+            "id, title, status, due_date"
+          );
 
         if (insertError) {
           console.error(insertError);
-          setTaskError("Could not create today's priorities.");
+
+          setTaskError(
+            "Could not create today's priorities."
+          );
+
           return;
         }
 
@@ -112,54 +220,72 @@ export default function Home() {
         ...createdTasks,
       ];
 
-      const orderedTasks = defaultPriorities
-        .map((title) =>
-          allTasks.find((task) => task.title === title)
-        )
-        .filter(Boolean) as Task[];
+      const orderedTasks =
+        defaultPriorities
+          .map((title) =>
+            allTasks.find(
+              (task) =>
+                task.title === title
+            )
+          )
+          .filter(Boolean) as Task[];
 
       setTasks(orderedTasks);
     } catch (error) {
       console.error(error);
-      setTaskError("Something went wrong loading priorities.");
+
+      setTaskError(
+        "Something went wrong loading priorities."
+      );
     } finally {
       setTasksLoading(false);
     }
   }
 
-  async function togglePriority(task: Task) {
+  async function togglePriority(
+    task: Task
+  ) {
     const newStatus =
-      task.status === "completed" ? "pending" : "completed";
+      task.status === "completed"
+        ? "pending"
+        : "completed";
 
-    // Update UI immediately
     setTasks((current) =>
       current.map((item) =>
         item.id === task.id
-          ? { ...item, status: newStatus }
+          ? {
+              ...item,
+              status: newStatus,
+            }
           : item
       )
     );
 
-    const { error } = await supabase
-      .from("tasks")
-      .update({
-        status: newStatus,
-      })
-      .eq("id", task.id);
+    const { error } =
+      await supabase
+        .from("tasks")
+        .update({
+          status: newStatus,
+        })
+        .eq("id", task.id);
 
     if (error) {
       console.error(error);
 
-      // Put it back if Supabase update fails
       setTasks((current) =>
         current.map((item) =>
           item.id === task.id
-            ? { ...item, status: task.status }
+            ? {
+                ...item,
+                status: task.status,
+              }
             : item
         )
       );
 
-      setTaskError("Could not update that priority.");
+      setTaskError(
+        "Could not update that priority."
+      );
     }
   }
 
@@ -170,15 +296,22 @@ export default function Home() {
     setReply("");
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ message }),
-      });
+      const response =
+        await fetch("/api/chat", {
+          method: "POST",
 
-      const data = await response.json();
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            message,
+          }),
+        });
+
+      const data =
+        await response.json();
 
       setReply(
         data.reply ||
@@ -186,7 +319,9 @@ export default function Home() {
           "Something went wrong."
       );
     } catch {
-      setReply("Something went wrong.");
+      setReply(
+        "Something went wrong."
+      );
     } finally {
       setLoading(false);
     }
@@ -197,7 +332,7 @@ export default function Home() {
       <div className="mx-auto min-h-screen max-w-md px-5 pb-40 pt-16">
 
         <header className="mb-10">
-          <p className="mb-2 text-sm text-zinc-500">
+          <p className="mb-2 text-sm text-violet-400">
             AMBITIOUS
           </p>
 
@@ -211,24 +346,89 @@ export default function Home() {
         </header>
 
         <section className="mb-8">
+          {calendarConnected ? (
+            <div className="flex items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-4">
+              <div>
+                <p className="font-medium">
+                  Google Calendar
+                </p>
+
+                <p className="mt-1 text-sm text-zinc-500">
+                  Connected to Ambitious
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 text-sm text-emerald-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                Connected
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={connectGoogleCalendar}
+              disabled={calendarConnecting}
+              className="flex w-full items-center justify-between rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-4 text-left transition active:scale-[0.99] disabled:opacity-50"
+            >
+              <div>
+                <p className="font-medium">
+                  Google Calendar
+                </p>
+
+                <p className="mt-1 text-sm text-zinc-500">
+                  Connect your real schedule
+                </p>
+              </div>
+
+              <span className="text-sm text-violet-400">
+                {calendarConnecting
+                  ? "Connecting..."
+                  : "Connect"}
+              </span>
+            </button>
+          )}
+        </section>
+
+        <section className="mb-8">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-sm font-medium text-zinc-400">
               TODAY
             </h2>
 
             <span className="text-sm text-zinc-600">
-              {new Intl.DateTimeFormat("en-AU", {
-                weekday: "long",
-              }).format(new Date())}
+              {new Intl.DateTimeFormat(
+                "en-AU",
+                {
+                  weekday: "long",
+                }
+              ).format(new Date())}
             </span>
           </div>
 
           <div className="space-y-3">
-            <Event time="8:30 AM" title="Morning routine" />
-            <Event time="10:00 AM" title="Trading" />
-            <Event time="1:00 PM" title="Gym" />
-            <Event time="3:00 PM" title="Content" />
-            <Event time="5:00 PM" title="Family time" />
+            <Event
+              time="8:30 AM"
+              title="Morning routine"
+            />
+
+            <Event
+              time="10:00 AM"
+              title="Trading"
+            />
+
+            <Event
+              time="1:00 PM"
+              title="Gym"
+            />
+
+            <Event
+              time="3:00 PM"
+              title="Content"
+            />
+
+            <Event
+              time="5:00 PM"
+              title="Family time"
+            />
           </div>
         </section>
 
@@ -238,9 +438,10 @@ export default function Home() {
           </p>
 
           <p className="leading-7 text-zinc-300">
-            Your morning is structured well. You have a gap
-            after trading that could be used for FX Replay
-            before the gym.
+            Your morning is structured
+            well. You have a gap after
+            trading that could be used
+            for FX Replay before the gym.
           </p>
         </section>
 
@@ -254,7 +455,9 @@ export default function Home() {
               <span className="text-xs text-zinc-600">
                 {
                   tasks.filter(
-                    (task) => task.status === "completed"
+                    (task) =>
+                      task.status ===
+                      "completed"
                   ).length
                 }
                 /{tasks.length} done
@@ -280,8 +483,13 @@ export default function Home() {
                 <Priority
                   key={task.id}
                   title={task.title}
-                  completed={task.status === "completed"}
-                  onToggle={() => togglePriority(task)}
+                  completed={
+                    task.status ===
+                    "completed"
+                  }
+                  onToggle={() =>
+                    togglePriority(task)
+                  }
                 />
               ))}
             </div>
@@ -294,7 +502,9 @@ export default function Home() {
         {reply && (
           <div className="relative mb-3 max-h-[55vh] overflow-y-auto rounded-3xl border border-zinc-800 bg-[#111113] p-5 pr-12 shadow-xl">
             <button
-              onClick={() => setReply("")}
+              onClick={() =>
+                setReply("")
+              }
               aria-label="Dismiss response"
               className="absolute right-4 top-3 text-2xl text-zinc-500 transition hover:text-white"
             >
@@ -310,9 +520,15 @@ export default function Home() {
         <div className="flex items-center gap-2 rounded-3xl border border-zinc-700 bg-white p-2 shadow-xl">
           <input
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={(e) =>
+              setMessage(
+                e.target.value
+              )
+            }
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              if (
+                e.key === "Enter"
+              ) {
                 askAssistant();
               }
             }}
@@ -325,7 +541,9 @@ export default function Home() {
             disabled={loading}
             className="rounded-2xl bg-black px-5 py-3 font-medium text-white disabled:opacity-50"
           >
-            {loading ? "..." : "Ask"}
+            {loading
+              ? "..."
+              : "Ask"}
           </button>
         </div>
       </div>
