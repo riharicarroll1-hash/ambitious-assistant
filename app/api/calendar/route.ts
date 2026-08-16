@@ -112,19 +112,38 @@ export async function GET(
       7
     );
 
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
+    const timeZone =
+      url.searchParams.get(
+        "timeZone"
+      ) || "UTC";
 
-    const end = new Date(start);
+    const timeMin =
+      url.searchParams.get(
+        "timeMin"
+      );
 
-    end.setDate(
-      end.getDate() + days
-    );
+    const timeMax =
+      url.searchParams.get(
+        "timeMax"
+      );
+
+    if (!timeMin || !timeMax) {
+      return NextResponse.json(
+        {
+          connected: false,
+          events: [],
+          error:
+            "Calendar date range is missing.",
+        },
+        { status: 400 }
+      );
+    }
 
     const params =
       new URLSearchParams({
-        timeMin: start.toISOString(),
-        timeMax: end.toISOString(),
+        timeMin,
+        timeMax,
+        timeZone,
         singleEvents: "true",
         orderBy: "startTime",
       });
@@ -186,6 +205,7 @@ export async function GET(
     return NextResponse.json({
       connected: true,
       days,
+      timeZone,
       events: formatEvents(
         data.items || []
       ),
