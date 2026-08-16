@@ -365,7 +365,7 @@ ${message}
 
       const calendarResponse =
         await fetch(
-          `${origin}/api/calendar`,
+          `${origin}/api/calendar?days=7`,
           {
             method: "GET",
 
