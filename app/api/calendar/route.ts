@@ -65,7 +65,9 @@ async function getFreshAccessToken(
   return data.access_token as string;
 }
 
-export async function GET() {
+export async function GET(
+  request: Request
+) {
   try {
     const cookieStore = await cookies();
 
@@ -98,13 +100,26 @@ export async function GET() {
       );
     }
 
-    const now = new Date();
+    const url = new URL(request.url);
 
-    const start = new Date(now);
+    const requestedDays =
+      Number(
+        url.searchParams.get("days")
+      ) || 1;
+
+    const days = Math.min(
+      Math.max(requestedDays, 1),
+      7
+    );
+
+    const start = new Date();
     start.setHours(0, 0, 0, 0);
 
     const end = new Date(start);
-    end.setDate(end.getDate() + 1);
+
+    end.setDate(
+      end.getDate() + days
+    );
 
     const params =
       new URLSearchParams({
@@ -114,9 +129,12 @@ export async function GET() {
         orderBy: "startTime",
       });
 
-    const calendarResponse =
+    const calendarUrl =
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`;
+
+    let calendarResponse =
       await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
+        calendarUrl,
         {
           headers: {
             Authorization:
@@ -135,9 +153,9 @@ export async function GET() {
           refreshToken
         );
 
-      const retry =
+      calendarResponse =
         await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params.toString()}`,
+          calendarUrl,
           {
             headers: {
               Authorization:
@@ -146,29 +164,6 @@ export async function GET() {
             cache: "no-store",
           }
         );
-
-      if (!retry.ok) {
-        const text = await retry.text();
-
-        console.error(
-          "Google Calendar retry error:",
-          text
-        );
-
-        throw new Error(
-          "Google Calendar request failed."
-        );
-      }
-
-      const retryData =
-        await retry.json();
-
-      return NextResponse.json({
-        connected: true,
-        events: formatEvents(
-          retryData.items || []
-        ),
-      });
     }
 
     if (!calendarResponse.ok) {
@@ -190,6 +185,7 @@ export async function GET() {
 
     return NextResponse.json({
       connected: true,
+      days,
       events: formatEvents(
         data.items || []
       ),
