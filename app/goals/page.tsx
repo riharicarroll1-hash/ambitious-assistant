@@ -18,6 +18,7 @@ type GoalAction = {
   frequency: Frequency;
   target_value: number;
   unit: string | null;
+  calendar_match?: string | null;
   active?: boolean;
 };
 
@@ -54,6 +55,7 @@ export default function GoalsPage() {
   const [error, setError] = useState("");
 
   const [creating, setCreating] = useState(false);
+
   const [goalTitle, setGoalTitle] = useState("");
   const [goalWhy, setGoalWhy] = useState("");
   const [goalDate, setGoalDate] = useState("");
@@ -71,11 +73,17 @@ export default function GoalsPage() {
     useState<string | null>(null);
 
   const [manualTitle, setManualTitle] = useState("");
+
   const [manualFrequency, setManualFrequency] =
     useState<Frequency>("daily");
+
   const [manualValue, setManualValue] = useState("1");
+
   const [manualUnit, setManualUnit] =
     useState("completion");
+
+  const [manualCalendarMatch, setManualCalendarMatch] =
+    useState("");
 
   const [goalMenu, setGoalMenu] =
     useState<string | null>(null);
@@ -116,6 +124,7 @@ export default function GoalsPage() {
             frequency,
             target_value,
             unit,
+            calendar_match,
             active
           )
         `)
@@ -168,6 +177,7 @@ export default function GoalsPage() {
             frequency,
             target_value,
             unit,
+            calendar_match,
             active
           )
         `)
@@ -208,9 +218,11 @@ export default function GoalsPage() {
     try {
       const response = await fetch("/api/goals/build", {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
         },
+
         body: JSON.stringify({
           goal: goalTitle,
           why: goalWhy,
@@ -225,6 +237,7 @@ export default function GoalsPage() {
           data.error ||
             "Could not build your goal."
         );
+
         return;
       }
 
@@ -237,6 +250,8 @@ export default function GoalsPage() {
               Number(action.target_value) || 1,
             unit:
               action.unit || "completion",
+            calendar_match:
+              action.calendar_match || "",
           })
         )
       );
@@ -283,38 +298,54 @@ export default function GoalsPage() {
 
       if (goalError || !goal) {
         console.error(goalError);
-        setError("Could not save your goal.");
+
+        setError(
+          "Could not save your goal."
+        );
+
         return;
       }
 
       const validActions =
         suggestedActions.filter(
-          (action) => action.title.trim()
+          (action) =>
+            action.title.trim()
         );
 
       if (validActions.length > 0) {
-        const rows = validActions.map(
-          (action) => ({
-            goal_id: goal.id,
-            user_id: user.id,
-            title: action.title.trim(),
-            frequency: action.frequency,
-            target_value:
-              Number(action.target_value) || 1,
-            unit:
-              action.unit?.trim() ||
-              "completion",
-            active: true,
-          })
-        );
+        const rows =
+          validActions.map(
+            (action) => ({
+              goal_id: goal.id,
+              user_id: user.id,
+              title: action.title.trim(),
+              frequency:
+                action.frequency,
+              target_value:
+                Number(
+                  action.target_value
+                ) || 1,
+              unit:
+                action.unit?.trim() ||
+                "completion",
+              calendar_match:
+                action.calendar_match?.trim() ||
+                null,
+              active: true,
+            })
+          );
 
-        const { error: actionsError } =
-          await supabase
-            .from("goal_targets")
-            .insert(rows);
+        const {
+          error: actionsError,
+        } = await supabase
+          .from("goal_targets")
+          .insert(rows);
 
         if (actionsError) {
-          console.error(actionsError);
+          console.error(
+            actionsError
+          );
+
           setError(
             "Goal saved, but some actions could not be added."
           );
@@ -332,23 +363,29 @@ export default function GoalsPage() {
     index: number,
     changes: Partial<GoalAction>
   ) {
-    setSuggestedActions((current) =>
-      current.map((action, i) =>
-        i === index
-          ? {
-              ...action,
-              ...changes,
-            }
-          : action
-      )
+    setSuggestedActions(
+      (current) =>
+        current.map(
+          (action, i) =>
+            i === index
+              ? {
+                  ...action,
+                  ...changes,
+                }
+              : action
+        )
     );
   }
 
   function removeSuggestedAction(
     index: number
   ) {
-    setSuggestedActions((current) =>
-      current.filter((_, i) => i !== index)
+    setSuggestedActions(
+      (current) =>
+        current.filter(
+          (_, i) =>
+            i !== index
+        )
     );
   }
 
@@ -356,17 +393,22 @@ export default function GoalsPage() {
     const newIndex =
       suggestedActions.length;
 
-    setSuggestedActions((current) => [
-      ...current,
-      {
-        title: "",
-        frequency: "daily",
-        target_value: 1,
-        unit: "completion",
-      },
-    ]);
+    setSuggestedActions(
+      (current) => [
+        ...current,
+        {
+          title: "",
+          frequency: "daily",
+          target_value: 1,
+          unit: "completion",
+          calendar_match: "",
+        },
+      ]
+    );
 
-    setEditingAction(newIndex);
+    setEditingAction(
+      newIndex
+    );
   }
 
   async function addManualAction(
@@ -387,24 +429,34 @@ export default function GoalsPage() {
         return;
       }
 
-      const { error } = await supabase
-        .from("goal_targets")
-        .insert({
-          goal_id: goalId,
-          user_id: user.id,
-          title: manualTitle.trim(),
-          frequency: manualFrequency,
-          target_value:
-            Number(manualValue) || 1,
-          unit:
-            manualUnit.trim() ||
-            "completion",
-          active: true,
-        });
+      const { error } =
+        await supabase
+          .from("goal_targets")
+          .insert({
+            goal_id: goalId,
+            user_id: user.id,
+            title:
+              manualTitle.trim(),
+            frequency:
+              manualFrequency,
+            target_value:
+              Number(
+                manualValue
+              ) || 1,
+            unit:
+              manualUnit.trim() ||
+              "completion",
+            calendar_match:
+              manualCalendarMatch.trim() ||
+              null,
+            active: true,
+          });
 
       if (error) {
         console.error(error);
-        setError("Could not add action.");
+        setError(
+          "Could not add action."
+        );
         return;
       }
 
@@ -413,6 +465,7 @@ export default function GoalsPage() {
       setManualFrequency("daily");
       setManualValue("1");
       setManualUnit("completion");
+      setManualCalendarMatch("");
 
       await loadGoals();
     } finally {
@@ -423,18 +476,21 @@ export default function GoalsPage() {
   async function removeExistingAction(
     id: string
   ) {
-    const { error } = await supabase
-      .from("goal_targets")
-      .update({
-        active: false,
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("id", id);
+    const { error } =
+      await supabase
+        .from("goal_targets")
+        .update({
+          active: false,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq("id", id);
 
     if (error) {
       console.error(error);
-      setError("Could not remove action.");
+      setError(
+        "Could not remove action."
+      );
       return;
     }
 
@@ -445,18 +501,21 @@ export default function GoalsPage() {
     id: string,
     status: string
   ) {
-    const { error } = await supabase
-      .from("goals")
-      .update({
-        status,
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("id", id);
+    const { error } =
+      await supabase
+        .from("goals")
+        .update({
+          status,
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq("id", id);
 
     if (error) {
       console.error(error);
-      setError("Could not update goal.");
+      setError(
+        "Could not update goal."
+      );
       return;
     }
 
@@ -485,18 +544,21 @@ export default function GoalsPage() {
   async function restoreGoal(
     id: string
   ) {
-    const { error } = await supabase
-      .from("goals")
-      .update({
-        status: "active",
-        updated_at:
-          new Date().toISOString(),
-      })
-      .eq("id", id);
+    const { error } =
+      await supabase
+        .from("goals")
+        .update({
+          status: "active",
+          updated_at:
+            new Date().toISOString(),
+        })
+        .eq("id", id);
 
     if (error) {
       console.error(error);
-      setError("Could not restore goal.");
+      setError(
+        "Could not restore goal."
+      );
       return;
     }
 
@@ -517,14 +579,17 @@ export default function GoalsPage() {
 
     setGoalMenu(null);
 
-    const { error } = await supabase
-      .from("goals")
-      .delete()
-      .eq("id", id);
+    const { error } =
+      await supabase
+        .from("goals")
+        .delete()
+        .eq("id", id);
 
     if (error) {
       console.error(error);
-      setError("Could not delete goal.");
+      setError(
+        "Could not delete goal."
+      );
       return;
     }
 
@@ -535,6 +600,7 @@ export default function GoalsPage() {
   return (
     <main className="min-h-screen bg-[#0b0b0d] text-white">
       <div className="mx-auto max-w-md px-5 pb-24 pt-14">
+
         <header className="mb-8">
           <Link
             href="/"
@@ -579,6 +645,7 @@ export default function GoalsPage() {
 
         {creating && (
           <section className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+
             <div className="mb-6">
               <p className="text-xs text-violet-400">
                 NEW GOAL
@@ -650,13 +717,14 @@ export default function GoalsPage() {
 
             {suggestedActions.length > 0 && (
               <div className="mt-8 border-t border-zinc-900 pt-6">
+
                 <div className="mb-4">
                   <p className="text-xs text-violet-400">
                     ACTIONS TO GET THERE
                   </p>
 
                   <p className="mt-2 text-sm leading-6 text-zinc-500">
-                    Ambitious has suggested these.
+                    Ambitious suggested these.
                     Change anything before saving.
                   </p>
                 </div>
@@ -671,6 +739,10 @@ export default function GoalsPage() {
                         {editingAction ===
                         index ? (
                           <>
+                            <label className="mb-2 block text-xs text-zinc-600">
+                              What do you need to do?
+                            </label>
+
                             <input
                               value={
                                 action.title
@@ -680,13 +752,12 @@ export default function GoalsPage() {
                                   index,
                                   {
                                     title:
-                                      e.target
-                                        .value,
+                                      e.target.value,
                                   }
                                 )
                               }
-                              placeholder="What do you need to do?"
-                              className="mb-3 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
+                              placeholder="Strength training"
+                              className="mb-4 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
                             />
 
                             <label className="mb-2 block text-xs text-zinc-600">
@@ -702,12 +773,11 @@ export default function GoalsPage() {
                                   index,
                                   {
                                     frequency:
-                                      e.target
-                                        .value as Frequency,
+                                      e.target.value as Frequency,
                                   }
                                 )
                               }
-                              className="mb-3 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3"
+                              className="mb-4 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3"
                             >
                               <option value="daily">
                                 Daily
@@ -718,7 +788,7 @@ export default function GoalsPage() {
                               </option>
                             </select>
 
-                            <div className="grid grid-cols-2 gap-3">
+                            <div className="mb-4 grid grid-cols-2 gap-3">
                               <div>
                                 <label className="mb-2 block text-xs text-zinc-600">
                                   How many?
@@ -734,11 +804,8 @@ export default function GoalsPage() {
                                       {
                                         target_value:
                                           Number(
-                                            e
-                                              .target
-                                              .value
-                                          ) ||
-                                          1,
+                                            e.target.value
+                                          ) || 1,
                                       }
                                     )
                                   }
@@ -754,25 +821,53 @@ export default function GoalsPage() {
 
                                 <input
                                   value={
-                                    action.unit ||
-                                    ""
+                                    action.unit || ""
                                   }
                                   onChange={(e) =>
                                     updateSuggestedAction(
                                       index,
                                       {
                                         unit:
-                                          e
-                                            .target
-                                            .value,
+                                          e.target.value,
                                       }
                                     )
                                   }
-                                  placeholder="videos"
+                                  placeholder="sessions"
                                   className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
                                 />
                               </div>
                             </div>
+
+                            <label className="mb-2 block text-xs text-zinc-600">
+                              Calendar match
+                              <span className="ml-1 text-zinc-700">
+                                Optional
+                              </span>
+                            </label>
+
+                            <input
+                              value={
+                                action.calendar_match ||
+                                ""
+                              }
+                              onChange={(e) =>
+                                updateSuggestedAction(
+                                  index,
+                                  {
+                                    calendar_match:
+                                      e.target.value,
+                                  }
+                                )
+                              }
+                              placeholder="e.g. Gym"
+                              className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
+                            />
+
+                            <p className="mt-2 text-xs leading-5 text-zinc-700">
+                              If this action is already scheduled
+                              in your calendar, enter the name
+                              Ambitious should look for.
+                            </p>
 
                             <button
                               onClick={() =>
@@ -780,7 +875,7 @@ export default function GoalsPage() {
                                   null
                                 )
                               }
-                              className="mt-3 text-sm text-violet-400"
+                              className="mt-4 text-sm text-violet-400"
                             >
                               Done
                             </button>
@@ -798,6 +893,13 @@ export default function GoalsPage() {
                                   action
                                 )}
                               </p>
+
+                              {action.calendar_match && (
+                                <p className="mt-2 text-xs text-violet-400">
+                                  Calendar:{" "}
+                                  {action.calendar_match}
+                                </p>
+                              )}
                             </div>
 
                             <div className="flex gap-3">
@@ -952,6 +1054,7 @@ export default function GoalsPage() {
                   </div>
 
                   <div className="border-t border-zinc-900 pt-5">
+
                     <div className="mb-3 flex items-center justify-between">
                       <p className="text-sm text-zinc-500">
                         ACTIONS TO GET THERE
@@ -981,16 +1084,12 @@ export default function GoalsPage() {
                         {actions.map(
                           (action) => (
                             <div
-                              key={
-                                action.id
-                              }
+                              key={action.id}
                               className="flex items-center justify-between gap-4 rounded-2xl bg-[#111113] px-4 py-4"
                             >
                               <div>
                                 <p className="text-zinc-200">
-                                  {
-                                    action.title
-                                  }
+                                  {action.title}
                                 </p>
 
                                 <p className="mt-1 text-sm text-zinc-600">
@@ -998,6 +1097,15 @@ export default function GoalsPage() {
                                     action
                                   )}
                                 </p>
+
+                                {action.calendar_match && (
+                                  <p className="mt-2 text-xs text-violet-400">
+                                    Calendar:{" "}
+                                    {
+                                      action.calendar_match
+                                    }
+                                  </p>
+                                )}
                               </div>
 
                               {action.id && (
@@ -1021,6 +1129,7 @@ export default function GoalsPage() {
                     {manualGoalId ===
                       goal.id && (
                       <div className="mt-4 rounded-2xl border border-zinc-800 bg-[#111113] p-4">
+
                         <label className="mb-2 block text-xs text-zinc-600">
                           What do you need to do?
                         </label>
@@ -1031,11 +1140,10 @@ export default function GoalsPage() {
                           }
                           onChange={(e) =>
                             setManualTitle(
-                              e.target
-                                .value
+                              e.target.value
                             )
                           }
-                          placeholder="e.g. Gym"
+                          placeholder="e.g. Strength training"
                           className="mb-4 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
                         />
 
@@ -1064,7 +1172,7 @@ export default function GoalsPage() {
                           </option>
                         </select>
 
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="mb-4 grid grid-cols-2 gap-3">
                           <div>
                             <label className="mb-2 block text-xs text-zinc-600">
                               How many?
@@ -1076,8 +1184,7 @@ export default function GoalsPage() {
                               }
                               onChange={(e) =>
                                 setManualValue(
-                                  e.target
-                                    .value
+                                  e.target.value
                                 )
                               }
                               inputMode="decimal"
@@ -1096,8 +1203,7 @@ export default function GoalsPage() {
                               }
                               onChange={(e) =>
                                 setManualUnit(
-                                  e.target
-                                    .value
+                                  e.target.value
                                 )
                               }
                               placeholder="sessions"
@@ -1105,6 +1211,32 @@ export default function GoalsPage() {
                             />
                           </div>
                         </div>
+
+                        <label className="mb-2 block text-xs text-zinc-600">
+                          Calendar match
+                          <span className="ml-1 text-zinc-700">
+                            Optional
+                          </span>
+                        </label>
+
+                        <input
+                          value={
+                            manualCalendarMatch
+                          }
+                          onChange={(e) =>
+                            setManualCalendarMatch(
+                              e.target.value
+                            )
+                          }
+                          placeholder="e.g. Gym"
+                          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 py-3 outline-none"
+                        />
+
+                        <p className="mt-2 text-xs leading-5 text-zinc-700">
+                          Example: if this action is
+                          Strength training and your
+                          calendar says Gym, enter Gym.
+                        </p>
 
                         <button
                           onClick={() =>
@@ -1125,6 +1257,7 @@ export default function GoalsPage() {
                   </div>
 
                   <div className="mt-5 flex items-center gap-2 border-t border-zinc-900 pt-5">
+
                     {goal.status ===
                     "active" ? (
                       <button
@@ -1182,6 +1315,7 @@ export default function GoalsPage() {
                       {goalMenu ===
                         goal.id && (
                         <div className="absolute bottom-12 right-0 z-20 w-52 overflow-hidden rounded-2xl border border-zinc-800 bg-[#151518] shadow-2xl">
+
                           <button
                             onClick={() =>
                               archiveGoal(
@@ -1217,6 +1351,7 @@ export default function GoalsPage() {
         )}
 
         <section className="mt-10 border-t border-zinc-900 pt-6">
+
           <button
             onClick={async () => {
               if (!showArchived) {
@@ -1248,6 +1383,7 @@ export default function GoalsPage() {
 
           {showArchived && (
             <div className="mt-3 space-y-2">
+
               {archivedGoals.length ===
               0 ? (
                 <p className="py-4 text-sm text-zinc-700">
@@ -1257,16 +1393,12 @@ export default function GoalsPage() {
                 archivedGoals.map(
                   (goal) => (
                     <div
-                      key={
-                        goal.id
-                      }
+                      key={goal.id}
                       className="flex items-center justify-between rounded-2xl bg-[#111113] px-4 py-4"
                     >
                       <div className="min-w-0 pr-4">
                         <p className="truncate text-zinc-400">
-                          {
-                            goal.title
-                          }
+                          {goal.title}
                         </p>
 
                         <p className="mt-1 text-xs text-zinc-700">
