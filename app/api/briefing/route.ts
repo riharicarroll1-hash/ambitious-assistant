@@ -18,22 +18,52 @@ type Task = {
   status?: string;
 };
 
-export async function POST(request: Request) {
+function validTimeZone(
+  value: unknown
+): string {
+  if (typeof value !== "string") {
+    return "UTC";
+  }
+
   try {
-    const supabase = await createClient();
+    new Intl.DateTimeFormat(
+      "en-AU",
+      {
+        timeZone: value,
+      }
+    ).format(new Date());
+
+    return value;
+  } catch {
+    return "UTC";
+  }
+}
+
+export async function POST(
+  request: Request
+) {
+  try {
+    const supabase =
+      await createClient();
 
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } =
+      await supabase.auth.getUser();
 
     if (!user) {
       return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 401 }
+        {
+          error: "Unauthorized",
+        },
+        {
+          status: 401,
+        }
       );
     }
 
-    const body = await request.json();
+    const body =
+      await request.json();
 
     const events: CalendarEvent[] =
       Array.isArray(body.events)
@@ -45,36 +75,94 @@ export async function POST(request: Request) {
         ? body.tasks
         : [];
 
-    const today = new Intl.DateTimeFormat(
-      "en-AU",
-      {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      }
-    ).format(new Date());
+    const timeZone =
+      validTimeZone(
+        body.timeZone
+      );
+
+    const now = new Date();
+
+    const today =
+      new Intl.DateTimeFormat(
+        "en-AU",
+        {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          timeZone,
+        }
+      ).format(now);
+
+    const currentTime =
+      new Intl.DateTimeFormat(
+        "en-AU",
+        {
+          hour: "numeric",
+          minute: "2-digit",
+          timeZone,
+        }
+      ).format(now);
 
     const calendarContext =
       events.length > 0
         ? events
             .map((event) => {
-              const time =
-                event.allDay
-                  ? "All day"
-                  : event.start
-                  ? new Intl.DateTimeFormat(
-                      "en-AU",
-                      {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      }
-                    ).format(
-                      new Date(event.start)
-                    )
-                  : "No time";
+              if (event.allDay) {
+                return `- All day: ${
+                  event.title ||
+                  "Untitled event"
+                }`;
+              }
 
-              return `- ${time}: ${
+              if (!event.start) {
+                return `- ${
+                  event.title ||
+                  "Untitled event"
+                }`;
+              }
+
+              const start =
+                new Intl.DateTimeFormat(
+                  "en-AU",
+                  {
+                    hour:
+                      "numeric",
+                    minute:
+                      "2-digit",
+                    timeZone,
+                  }
+                ).format(
+                  new Date(
+                    event.start
+                  )
+                );
+
+              let end = "";
+
+              if (event.end) {
+                end =
+                  new Intl.DateTimeFormat(
+                    "en-AU",
+                    {
+                      hour:
+                        "numeric",
+                      minute:
+                        "2-digit",
+                      timeZone,
+                    }
+                  ).format(
+                    new Date(
+                      event.end
+                    )
+                  );
+              }
+
+              return `- ${start}${
+                end
+                  ? `–${end}`
+                  : ""
+              }: ${
                 event.title ||
                 "Untitled event"
               }`;
@@ -107,29 +195,46 @@ export async function POST(request: Request) {
         instructions: `
 You are Ambitious, Hari's personal executive assistant.
 
-Your job is to look at Hari's real calendar and priorities and give him a useful daily briefing.
+Your job is to look at Hari's real calendar and priorities
+and give him a useful daily briefing.
+
+IMPORTANT:
+All calendar times supplied below have already been converted
+into the user's current device timezone.
+
+The user's current timezone is:
+${timeZone}
+
+Do NOT convert these times again.
 
 Rules:
 - Be concise.
-- Maximum 3 short sentences.
+- Maximum 3 short paragraphs.
 - Prioritise what actually matters today.
 - Mention scheduling conflicts or useful free gaps if obvious.
 - Do not invent appointments.
 - Do not invent deadlines.
 - Treat completed tasks as already done.
+- Use the current local time when deciding what is still ahead today.
+- Do not recommend doing an event that has already passed.
 - If the day is empty, say so and suggest using the available time productively.
 - Speak naturally, like a highly capable executive assistant.
-- Do not say "based on your calendar data".
 `,
 
         input: `
-TODAY:
+CURRENT LOCAL DATE:
 ${today}
 
-CALENDAR:
+CURRENT LOCAL TIME:
+${currentTime}
+
+DEVICE TIMEZONE:
+${timeZone}
+
+TODAY'S CALENDAR:
 ${calendarContext}
 
-PRIORITIES:
+TODAY'S PRIORITIES:
 ${taskContext}
 
 Give Hari his briefing for today.
@@ -140,6 +245,7 @@ Give Hari his briefing for today.
       briefing:
         response.output_text ||
         "Your day is ready.",
+      timeZone,
     });
   } catch (error) {
     console.error(
@@ -152,7 +258,9 @@ Give Hari his briefing for today.
         error:
           "Could not generate briefing.",
       },
-      { status: 500 }
+      {
+        status: 500,
+      }
     );
   }
 }
