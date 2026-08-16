@@ -82,7 +82,8 @@ export default function Home() {
 
           scopes:
             scopes:
-  "openid email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events.readonly",
+  "openid email profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/calendar.events.readonly",,
+          
           queryParams: {
             access_type: "offline",
             prompt: "consent",
