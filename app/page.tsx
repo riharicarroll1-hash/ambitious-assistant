@@ -39,9 +39,8 @@ export default function Home() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [taskError, setTaskError] = useState("");
 
-  const [calendarEvents, setCalendarEvents] = useState<
-    CalendarEvent[]
-  >([]);
+  const [calendarEvents, setCalendarEvents] =
+    useState<CalendarEvent[]>([]);
 
   const [calendarLoading, setCalendarLoading] =
     useState(true);
@@ -53,6 +52,12 @@ export default function Home() {
     useState(false);
 
   const [calendarError, setCalendarError] =
+    useState("");
+
+  const [briefing, setBriefing] = useState("");
+  const [briefingLoading, setBriefingLoading] =
+    useState(true);
+  const [briefingError, setBriefingError] =
     useState("");
 
   useEffect(() => {
@@ -71,6 +76,22 @@ export default function Home() {
       );
     }
   }, []);
+
+  useEffect(() => {
+    if (
+      !calendarLoading &&
+      !tasksLoading &&
+      calendarConnected
+    ) {
+      generateBriefing(calendarEvents, tasks);
+    }
+  }, [
+    calendarLoading,
+    tasksLoading,
+    calendarConnected,
+    calendarEvents,
+    tasks,
+  ]);
 
   async function loadCalendar() {
     setCalendarLoading(true);
@@ -106,11 +127,66 @@ export default function Home() {
       );
 
       setCalendarConnected(false);
+
       setCalendarError(
         "Could not load Google Calendar."
       );
     } finally {
       setCalendarLoading(false);
+    }
+  }
+
+  async function generateBriefing(
+    events: CalendarEvent[],
+    currentTasks: Task[]
+  ) {
+    setBriefingLoading(true);
+    setBriefingError("");
+
+    try {
+      const response = await fetch(
+        "/api/briefing",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            events,
+            tasks: currentTasks,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setBriefingError(
+          data.error ||
+            "Could not generate today's briefing."
+        );
+
+        return;
+      }
+
+      setBriefing(
+        data.briefing ||
+          "Your day is ready."
+      );
+    } catch (error) {
+      console.error(
+        "Briefing loading error:",
+        error
+      );
+
+      setBriefingError(
+        "Could not generate today's briefing."
+      );
+    } finally {
+      setBriefingLoading(false);
     }
   }
 
@@ -428,7 +504,6 @@ export default function Home() {
 
               <div className="flex items-center gap-2 text-sm text-emerald-400">
                 <span className="h-2 w-2 rounded-full bg-emerald-400" />
-
                 Connected
               </div>
             </div>
@@ -523,17 +598,69 @@ export default function Home() {
         </section>
 
         <section className="mb-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
-          <p className="mb-3 text-sm text-violet-400">
-            AI BRIEFING
-          </p>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm text-violet-400">
+              AI BRIEFING
+            </p>
 
-          <p className="leading-7 text-zinc-300">
-            Your calendar is now connected.
-            Next, Ambitious will use your
-            real schedule, priorities and
-            memories to help organise your
-            day.
-          </p>
+            {!briefingLoading &&
+              calendarConnected && (
+                <button
+                  onClick={() =>
+                    generateBriefing(
+                      calendarEvents,
+                      tasks
+                    )
+                  }
+                  className="text-xs text-zinc-600"
+                >
+                  Refresh
+                </button>
+              )}
+          </div>
+
+          {briefingLoading &&
+            calendarConnected && (
+              <p className="leading-7 text-zinc-500">
+                Analysing your day...
+              </p>
+            )}
+
+          {!calendarConnected &&
+            !calendarLoading && (
+              <p className="leading-7 text-zinc-400">
+                Connect Google Calendar to
+                generate your daily briefing.
+              </p>
+            )}
+
+          {briefingError && (
+            <div>
+              <p className="leading-7 text-zinc-400">
+                {briefingError}
+              </p>
+
+              <button
+                onClick={() =>
+                  generateBriefing(
+                    calendarEvents,
+                    tasks
+                  )
+                }
+                className="mt-3 text-sm text-violet-400"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {!briefingLoading &&
+            !briefingError &&
+            briefing && (
+              <p className="whitespace-pre-wrap leading-7 text-zinc-300">
+                {briefing}
+              </p>
+            )}
         </section>
 
         <section className="mb-10">
@@ -589,7 +716,6 @@ export default function Home() {
       </div>
 
       <div className="fixed bottom-6 left-1/2 w-[calc(100%-40px)] max-w-md -translate-x-1/2">
-
         {reply && (
           <div className="relative mb-3 max-h-[55vh] overflow-y-auto rounded-3xl border border-zinc-800 bg-[#111113] p-5 pr-12 shadow-xl">
             <button
